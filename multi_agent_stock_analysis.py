@@ -1246,15 +1246,16 @@ def print_final_report(report: FinalReport):
     print(f"  {verdict_text}\n")
 
     # 5. 交易方案
-    print(f"【交易方案】")
+    print(f"【交易方案 · 演示参考】")
     trade = [
         ["入场价区间", f"{report.entry_low}  ~  {report.entry_high} 元"],
         ["目标价一（保守）", f"{report.tgt1} 元"],
         ["目标价二（乐观）", f"{report.tgt2} 元"],
         ["止损价", f"{report.stop_loss} 元（跌破立即离场）"],
-        ["建议仓位", f"{report.position_size}"],
+        ["参考仓位（演示）", f"{report.position_size}"],
     ]
     print(tabulate(trade, tablefmt="fancy_grid", colalign=("right", "left")))
+    print("  ⚠️  以上交易方案（入场价/目标价/止损/仓位）为演示与学习用途，不构成任何投资建议。")
 
     # 6. 催化日历
     if report.catalysts:
@@ -1288,7 +1289,7 @@ def save_report_json(report: FinalReport, data: StockRawData):
         "final": {
             k: v for k, v in asdict(report).items()
             if k != "agent_outputs"  # 已单独存
-        }
+        } | {"disclaimer": "本报告由 AI 自动生成，仅供研究学习参考，不构成任何投资建议；市场有风险，入市需谨慎。"}
     }
     # 输出到 data/ 目录，去掉日期后缀，始终覆盖为最新（供看板页面读取）
     import os
@@ -1416,6 +1417,9 @@ def build_html_report(report: FinalReport, data: StockRawData) -> str:
   .rating-badge {{ display:inline-block; padding:8px 24px; border-radius:20px; font-size:20px; font-weight:bold;
     color:#fff; background:{rating_c}; margin-top:10px; }}
   .rating-score {{ font-size:14px; color:#a0a4b0; margin-top:6px; }}
+  .disclaimer-banner {{ margin-top:12px; padding:10px 14px; border-radius:8px; font-size:13px; font-weight:bold;
+    background:#3a2f12; border:1px solid #f1c40f; color:#f7d97a; line-height:1.5; }}
+  .trade-note {{ font-size:12px; color:#e8c8a0; margin-bottom:10px; }}
   .section {{ background:#1a1d28; border-radius:10px; padding:20px; margin-bottom:16px; }}
   .section-title {{ font-size:18px; font-weight:bold; color:#5dade2; margin-bottom:14px; border-left:3px solid #5dade2; padding-left:10px; }}
   /* 概览卡片 */
@@ -1483,6 +1487,7 @@ def build_html_report(report: FinalReport, data: StockRawData) -> str:
     <div class="subtitle">5人 Agent 团队分析报告 · {ts}</div>
     <div class="rating-badge">{report.rating}</div>
     <div class="rating-score">综合评分 {report.rating_score:+.2f}（-10 ~ +10）</div>
+    <div class="disclaimer-banner">⚠️ 本报告由 AI 自动生成，仅供研究学习参考，不构成任何投资建议。市场有风险，入市需谨慎。</div>
   </div>
 
   <!-- 概览 -->
@@ -1534,13 +1539,14 @@ def build_html_report(report: FinalReport, data: StockRawData) -> str:
 
   <!-- 交易方案 -->
   <div class="section">
-    <div class="section-title">💰 交易方案</div>
+    <div class="section-title">💰 交易方案（演示参考）</div>
+    <div class="trade-note">⚠️ 以下入场价 / 目标价 / 止损 / 仓位均为演示学习用参考，不构成投资建议。</div>
     <div class="trade-grid">
       <div class="trade-item"><div class="label">入场价区间</div><div class="value">{report.entry_low:.2f} ~ {report.entry_high:.2f} 元</div></div>
       <div class="trade-item"><div class="label">目标价（保守）</div><div class="value">{report.tgt1:.2f} 元</div></div>
       <div class="trade-item"><div class="label">目标价（乐观）</div><div class="value">{report.tgt2:.2f} 元</div></div>
       <div class="trade-item"><div class="label">止损价</div><div class="value" style="color:#e74c3c">{report.stop_loss:.2f} 元</div></div>
-      <div class="trade-item"><div class="label">建议仓位</div><div class="value">{report.position_size}</div></div>
+      <div class="trade-item"><div class="label">参考仓位（演示）</div><div class="value">{report.position_size}</div></div>
       <div class="trade-item"><div class="label">当前价</div><div class="value">{report.price:.2f} 元</div></div>
     </div>
   </div>

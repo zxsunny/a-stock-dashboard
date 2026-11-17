@@ -2,6 +2,12 @@
 # 🔴 2026-10-15 由全局依赖体检生成 —— 此前本项目没有 requirements.txt，
 #    代码 import 的第三方包无任何记录，换机/重装即缺。
 #    生成方式：scripts/audit_all_projects_deps.py（扫代码实际 import，不依赖 venv）
+#
+# ⚠️ 运行环境要求（P11 修复）：
+#   本项目需要 Python >= 3.10（multi_agent_stock_analysis.py 使用 PEP 604
+#   联合类型注解，如 headers: Dict[str, str] | None；Python 3.9 及以下会在
+#   import 阶段直接报错：TypeError: unsupported operand type(s) for |）。
+#   建议用 Python 3.11+，可用 python3.10+ 直接运行 server.py。
 
 requests         # HTTP 请求（拉行情数据）
 tabulate         # 终端表格输出

@@ -88,10 +88,11 @@
     {
       "id": "P8",
       "title": "后端直接产出具体买卖评级/仓位，缺乏醒目免责",
-      "status": "open",
+      "status": "fixed",
       "severity": "high",
       "improvement": "#3",
-      "files": ["multi_agent_stock_analysis.py"],
+      "fixedAt": "2026-11-18",
+      "files": ["multi_agent_stock_analysis.py", "assets/watchlist.js"],
       "detail": "docs/问题与修改历史.md#P8"
     },
     {
@@ -106,10 +107,11 @@
     {
       "id": "P11",
       "title": "requirements.txt 未声明 Python ≥ 3.10（multi_agent_stock_analysis.py:100 用 PEP 604 联合类型，3.9 下 import 阶段崩溃）",
-      "status": "open",
+      "status": "fixed",
       "severity": "high",
       "improvement": "#10",
-      "files": ["requirements.txt", "multi_agent_stock_analysis.py"],
+      "fixedAt": "2026-11-18",
+      "files": ["requirements.txt"],
       "detail": "docs/问题与修改历史.md#P11"
     },
     {
@@ -125,14 +127,14 @@
   "improvements": [
     {"id": "#1", "title": "修复前端估值死代码（补f162/f167/f116/f168字段）", "priority": "high", "status": "fixed", "fixedAt": "2026-08-11", "issue": "P1"},
     {"id": "#2", "title": "产业策略师去硬编码（接动态行业/概念或LLM）", "priority": "high", "status": "open", "issue": "P2"},
-    {"id": "#3", "title": "投资建议加醒目免责+弱化具体仓位数字", "priority": "high", "status": "open", "issue": "P8"},
+    {"id": "#3", "title": "投资建议加醒目免责+弱化具体仓位数字", "priority": "high", "status": "fixed", "fixedAt": "2026-11-18", "issue": "P8"},
     {"id": "#4", "title": "估值模型改为相对PE法三档区间+安全边际约束", "priority": "medium", "status": "fixed", "fixedAt": "2026-08-24", "issue": "P3"},
     {"id": "#5", "title": "新闻EXCLUDE列表收紧，避免误杀大宗商品/地缘财经", "priority": "medium", "status": "open", "issue": "P4"},
     {"id": "#6", "title": "统一自选股持久化为单源（localStorage为主）", "priority": "medium", "status": "open", "issue": "P6"},
     {"id": "#7", "title": "打通前后端（看板一键触发并展示后端报告）", "priority": "low", "status": "fixed", "fixedAt": "2026-08-11", "issue": "P7"},
     {"id": "#8", "title": "补MA60边界保护（K线不足60根时不误报）", "priority": "low", "status": "open", "issue": "P5"},
     {"id": "#9", "title": "五维评分语义统一（风险→安全，所有维度分越高越好）", "priority": "medium", "status": "fixed", "fixedAt": "2026-08-24", "issue": "P10"},
-    {"id": "#10", "title": "requirements.txt 声明 Python ≥ 3.10 及运行环境说明", "priority": "high", "status": "open", "issue": "P11"},
+    {"id": "#10", "title": "requirements.txt 声明 Python ≥ 3.10 及运行环境说明", "priority": "high", "status": "fixed", "fixedAt": "2026-11-18", "issue": "P11"},
     {"id": "#11", "title": "排查报告营收/净利增速恒为 +0.0% 的数据口径问题", "priority": "low", "status": "open", "issue": "P12"}
   ],
   "conventions": {

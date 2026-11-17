@@ -1768,6 +1768,10 @@
       '<div style="font-size:1rem;font-weight:700;color:' + ratingColor + ';">' + (ratingScore >= 0 ? '+' : '') + ratingScore + '</div></div>' +
       '</div>';
 
+    // 1.5 醒目免责横幅
+    html += '<div style="background:#3a2f12;border:1px solid #f1c40f;color:#f7d97a;border-radius:8px;padding:8px 10px;margin-bottom:10px;font-size:0.68rem;font-weight:600;line-height:1.5;">' +
+      '⚠️ 本报告由 AI 自动生成，仅供研究学习参考，不构成任何投资建议。市场有风险，入市需谨慎。</div>';
+
     // 2. 五维雷达图（用 ECharts）
     var radarId = 'agent_radar_' + (f.stock_code || '') + '_' + Date.now();
     var radarVals = [f.score_valuation || 0, f.score_earnings || 0, f.score_industry || 0, f.score_technical || 0, f.score_risk || 0];
@@ -1789,14 +1793,15 @@
 
     // 3. 交易方案
     html += '<div style="background:var(--bg);border-radius:10px;padding:10px;margin-bottom:10px;">' +
-      '<div style="font-size:0.75rem;color:var(--muted);margin-bottom:6px;">交易方案</div>' +
+      '<div style="font-size:0.75rem;color:var(--muted);margin-bottom:2px;">交易方案（演示参考）</div>' +
+      '<div style="font-size:0.6rem;color:#e8c8a0;margin-bottom:6px;">⚠️ 以下价格与仓位为演示学习用参考，不构成投资建议。</div>' +
       '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;">' +
       '<div style="text-align:center;background:var(--card);border-radius:6px;padding:6px;border:1px solid var(--rule);"><div style="font-size:0.6rem;color:var(--muted);">入场价区间</div><div style="font-size:0.82rem;font-weight:600;">' + (f.entry_low || 0).toFixed(2) + ' ~ ' + (f.entry_high || 0).toFixed(2) + '</div></div>' +
       '<div style="text-align:center;background:var(--card);border-radius:6px;padding:6px;border:1px solid var(--rule);"><div style="font-size:0.6rem;color:var(--muted);">当前价</div><div style="font-size:0.82rem;font-weight:600;">' + (f.price || 0).toFixed(2) + '</div></div>' +
       '<div style="text-align:center;background:var(--card);border-radius:6px;padding:6px;border:1px solid var(--rule);"><div style="font-size:0.6rem;color:var(--muted);">目标价(保守)</div><div style="font-size:0.82rem;font-weight:600;color:#ef4444;">' + (f.tgt1 || 0).toFixed(2) + '</div></div>' +
       '<div style="text-align:center;background:var(--card);border-radius:6px;padding:6px;border:1px solid var(--rule);"><div style="font-size:0.6rem;color:var(--muted);">目标价(乐观)</div><div style="font-size:0.82rem;font-weight:600;color:#ef4444;">' + (f.tgt2 || 0).toFixed(2) + '</div></div>' +
       '<div style="text-align:center;background:var(--card);border-radius:6px;padding:6px;border:1px solid var(--rule);"><div style="font-size:0.6rem;color:var(--muted);">止损价</div><div style="font-size:0.82rem;font-weight:600;color:#10b981;">' + (f.stop_loss || 0).toFixed(2) + '</div></div>' +
-      '<div style="text-align:center;background:var(--card);border-radius:6px;padding:6px;border:1px solid var(--rule);"><div style="font-size:0.6rem;color:var(--muted);">建议仓位</div><div style="font-size:0.82rem;font-weight:600;">' + (f.position_size || '--') + '</div></div>' +
+      '<div style="text-align:center;background:var(--card);border-radius:6px;padding:6px;border:1px solid var(--rule);"><div style="font-size:0.6rem;color:var(--muted);">参考仓位（演示）</div><div style="font-size:0.82rem;font-weight:600;">' + (f.position_size || '--') + '</div></div>' +
       '</div></div>';
 
     // 4. 多空辩论
