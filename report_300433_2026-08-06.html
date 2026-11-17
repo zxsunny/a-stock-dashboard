@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>股票分析报告 · 蓝思科技(300433)</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:"Microsoft YaHei","Segoe UI",sans-serif; background:#0f1117; color:#d0d4dc; padding:20px; }
+  .container { max-width:900px; margin:0 auto; }
+  .header { text-align:center; padding:30px 20px; background:linear-gradient(135deg,#1a1d28,#2d3548); border-radius:12px; margin-bottom:20px; }
+  .header h1 { font-size:28px; color:#fff; margin-bottom:8px; }
+  .header .subtitle { font-size:14px; color:#7a8090; }
+  .rating-badge { display:inline-block; padding:8px 24px; border-radius:20px; font-size:20px; font-weight:bold;
+    color:#fff; background:#95a5a6; margin-top:10px; }
+  .rating-score { font-size:14px; color:#a0a4b0; margin-top:6px; }
+  .section { background:#1a1d28; border-radius:10px; padding:20px; margin-bottom:16px; }
+  .section-title { font-size:18px; font-weight:bold; color:#5dade2; margin-bottom:14px; border-left:3px solid #5dade2; padding-left:10px; }
+  /* 概览卡片 */
+  .overview-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+  .overview-item { background:#252a38; border-radius:8px; padding:14px; text-align:center; }
+  .overview-item .label { font-size:12px; color:#7a8090; margin-bottom:4px; }
+  .overview-item .value { font-size:18px; font-weight:bold; color:#e8e8e8; }
+  /* 雷达图 */
+  .radar-section { display:flex; align-items:center; gap:30px; }
+  .radar-svg { flex:0 0 320px; }
+  .radar-scores { flex:1; }
+  .radar-scores table { width:100%; border-collapse:collapse; }
+  .radar-scores th, .radar-scores td { padding:8px 10px; border-bottom:1px solid #2a2e3a; }
+  .radar-scores th { text-align:left; color:#7a8090; font-size:13px; }
+  .radar-scores td { text-align:center; font-weight:bold; font-size:16px; }
+  .grid-poly { fill:none; stroke:#2a2e3a; stroke-width:1; }
+  .axis-line { stroke:#2a2e3a; stroke-width:1; }
+  .data-poly { fill:rgba(93,173,226,0.2); stroke:#5dade2; stroke-width:2; }
+  .data-point { fill:#5dade2; r:4; }
+  .radar-label { font-size:12px; fill:#d0d4dc; font-weight:bold; }
+  .radar-value { font-size:11px; fill:#5dade2; }
+  /* 多空辩论 */
+  .debate-table { width:100%; border-collapse:collapse; }
+  .debate-table th { padding:10px; font-size:14px; }
+  .debate-table th.bull { color:#e74c3c; text-align:left; }
+  .debate-table th.bear { color:#2ecc71; text-align:left; }
+  .debate-table td { padding:10px; border-bottom:1px solid #2a2e3a; font-size:13px; line-height:1.5; }
+  .bull-cell { color:#e8a0a0; border-right:1px solid #2a2e3a !important; }
+  .bear-cell { color:#a0d8a0; }
+  /* 交易方案 */
+  .trade-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+  .trade-item { background:#252a38; border-radius:8px; padding:14px; }
+  .trade-item .label { font-size:12px; color:#7a8090; margin-bottom:4px; }
+  .trade-item .value { font-size:16px; font-weight:bold; color:#e8e8e8; }
+  /* Agent 卡片 */
+  .agent-card { background:#252a38; border-radius:8px; margin-bottom:12px; overflow:hidden; }
+  .agent-header { padding:12px 16px; font-weight:bold; font-size:15px; display:flex; align-items:center; gap:8px;
+    background:#1e2230; border-bottom:1px solid #2a2e3a; }
+  .agent-score { margin-left:auto; padding:2px 10px; border-radius:10px; font-size:12px; color:#fff; }
+  .agent-body { display:grid; grid-template-columns:1fr 1fr 1fr; gap:1px; background:#2a2e3a; }
+  .agent-col { background:#252a38; padding:12px; }
+  .col-title { font-size:12px; font-weight:bold; margin-bottom:6px; }
+  .col-title.bull { color:#e74c3c; }
+  .col-title.bear { color:#2ecc71; }
+  .agent-col ul { list-style:none; padding-left:0; }
+  .agent-col li { font-size:12px; line-height:1.6; margin-bottom:3px; }
+  .agent-col li.empty { color:#555; }
+  .score-bar { width:100%; height:6px; background:#2a2e3a; border-radius:3px; margin-top:4px; }
+  .score-fill { height:100%; border-radius:3px; }
+  /* 标签 */
+  .tags { display:flex; flex-wrap:wrap; gap:8px; }
+  .tag { background:#2d3548; color:#5dade2; padding:4px 12px; border-radius:12px; font-size:12px; }
+  /* 风险 */
+  .warnings ul { list-style:none; padding-left:0; }
+  .warnings li { font-size:13px; line-height:1.8; color:#e8c8a0; }
+  .footer { text-align:center; padding:20px; font-size:12px; color:#555; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- 标题 -->
+  <div class="header">
+    <h1>🧑‍💼 蓝思科技 (300433)</h1>
+    <div class="subtitle">5人 Agent 团队分析报告 · 2026-08-06 21:30:22</div>
+    <div class="rating-badge">HOLD</div>
+    <div class="rating-score">综合评分 -0.10（-10 ~ +10）</div>
+  </div>
+
+  <!-- 概览 -->
+  <div class="section">
+    <div class="section-title">📊 股票概览</div>
+    <div class="overview-grid">
+      <div class="overview-item"><div class="label">最新价 / 涨跌幅</div><div class="value">34.82 / -0.77%</div></div>
+      <div class="overview-item"><div class="label">总市值</div><div class="value">1838.1 亿</div></div>
+      <div class="overview-item"><div class="label">PE-TTM / PB</div><div class="value">45.8 / 3.52</div></div>
+      <div class="overview-item"><div class="label">换手率</div><div class="value">2.21%</div></div>
+    </div>
+  </div>
+
+  <!-- 五维雷达 -->
+  <div class="section">
+    <div class="section-title">🎯 五维评分雷达</div>
+    <div class="radar-section">
+      <div class="radar-svg">
+        <svg width="320" height="320" xmlns="http://www.w3.org/2000/svg">
+          <polygon points="150.0,130.0 169.0,143.8 161.8,166.2 138.2,166.2 131.0,143.8" class="grid-poly" /><polygon points="150.0,110.0 188.0,137.6 173.5,182.4 126.5,182.4 112.0,137.6" class="grid-poly" /><polygon points="150.0,90.0 207.1,131.5 185.3,198.5 114.7,198.5 92.9,131.5" class="grid-poly" /><polygon points="150.0,70.0 226.1,125.3 197.0,214.7 103.0,214.7 73.9,125.3" class="grid-poly" /><polygon points="150.0,50.0 245.1,119.1 208.8,230.9 91.2,230.9 54.9,119.1" class="grid-poly" />
+          <line x1="150" y1="150" x2="150.0" y2="50.0" class="axis-line" /><line x1="150" y1="150" x2="245.1" y2="119.1" class="axis-line" /><line x1="150" y1="150" x2="208.8" y2="230.9" class="axis-line" /><line x1="150" y1="150" x2="91.2" y2="230.9" class="axis-line" /><line x1="150" y1="150" x2="54.9" y2="119.1" class="axis-line" />
+          <polygon points="150.0,110.0 216.6,128.4 185.3,198.5 126.5,182.4 64.4,122.2" class="data-poly" />
+          <circle cx="150.0" cy="110.0" r="4" class="data-point" /><circle cx="216.6" cy="128.4" r="4" class="data-point" /><circle cx="185.3" cy="198.5" r="4" class="data-point" /><circle cx="126.5" cy="182.4" r="4" class="data-point" /><circle cx="64.4" cy="122.2" r="4" class="data-point" />
+          <text x="150.0" y="32.0" class="radar-label" text-anchor="middle">估值</text><text x="150.0" y="46.0" class="radar-value" text-anchor="middle">4/10</text><text x="266.0" y="116.3" class="radar-label" text-anchor="middle">财报</text><text x="266.0" y="130.3" class="radar-value" text-anchor="middle">7/10</text><text x="221.7" y="252.7" class="radar-label" text-anchor="middle">产业</text><text x="221.7" y="266.7" class="radar-value" text-anchor="middle">6/10</text><text x="78.3" y="252.7" class="radar-label" text-anchor="middle">技术</text><text x="78.3" y="266.7" class="radar-value" text-anchor="middle">4/10</text><text x="34.0" y="116.3" class="radar-label" text-anchor="middle">风险</text><text x="34.0" y="130.3" class="radar-value" text-anchor="middle">9/10</text>
+        </svg>
+      </div>
+      <div class="radar-scores">
+        <table>
+          <tr><th>维度</th><th>分数</th><th>图形</th></tr>
+          <tr><td>🔢 估值</td><td>4</td><td><div class="score-bar"><div class="score-fill" style="width:40%;background:#f39c12"></div></div></td></tr>
+          <tr><td>📊 财报</td><td>7</td><td><div class="score-bar"><div class="score-fill" style="width:70%;background:#e74c3c"></div></div></td></tr>
+          <tr><td>🏭 产业</td><td>6</td><td><div class="score-bar"><div class="score-fill" style="width:60%;background:#f39c12"></div></div></td></tr>
+          <tr><td>📈 技术</td><td>4</td><td><div class="score-bar"><div class="score-fill" style="width:40%;background:#f39c12"></div></div></td></tr>
+          <tr><td>🧨 风险</td><td>9</td><td><div class="score-bar"><div class="score-fill" style="width:90%;background:#e74c3c"></div></div></td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 多空辩论 -->
+  <div class="section">
+    <div class="section-title">⚔️ 多空辩论 · 汇总</div>
+    <table class="debate-table">
+      <tr><th class="bull">🐂 多头依据 (5 条)</th><th class="bear">🐻 空头依据 (6 条)</th></tr>
+      <tr><td class='bull-cell'>营收正增长 +0.0%</td><td class='bear-cell'>PE 45.8x 偏高，估值天花板低</td></tr><tr><td class='bull-cell'>净利稳健增长 +0.0%</td><td class='bear-cell'>PB 3.52x 估值溢价较高</td></tr><tr><td class='bull-cell'>主线催化：苹果链创新</td><td class='bear-cell'>当前价已接近乐观目标价 14.23，短期向上空间有限</td></tr><tr><td class='bull-cell'>MACD 金叉，DIF=-2.96 DEA=-3.03</td><td class='bear-cell'>均线空头排列，趋势向下</td></tr><tr><td class='bull-cell'>60日位置 16%，接近阶段低点，赔率较高</td><td class='bear-cell'>失守 MA60，中期结构偏弱</td></tr><tr><td class='bull-cell'></td><td class='bear-cell'>PE 45.8x 偏高，需要持续高增长才能消化</td></tr>
+    </table>
+  </div>
+
+  <!-- 交易方案 -->
+  <div class="section">
+    <div class="section-title">💰 交易方案</div>
+    <div class="trade-grid">
+      <div class="trade-item"><div class="label">入场价区间</div><div class="value">9.43 ~ 10.25 元</div></div>
+      <div class="trade-item"><div class="label">目标价（保守）</div><div class="value">12.06 元</div></div>
+      <div class="trade-item"><div class="label">目标价（乐观）</div><div class="value">14.23 元</div></div>
+      <div class="trade-item"><div class="label">止损价</div><div class="value" style="color:#e74c3c">29.60 元</div></div>
+      <div class="trade-item"><div class="label">建议仓位</div><div class="value">5% ~ 15%</div></div>
+      <div class="trade-item"><div class="label">当前价</div><div class="value">34.82 元</div></div>
+    </div>
+  </div>
+
+  <!-- Agent 详情 -->
+  <div class="section">
+    <div class="section-title">👥 5 人 Agent 团队详情</div>
+    
+        <div class="agent-card">
+          <div class="agent-header"><span class="agent-emoji">🔢</span> 估值分析师
+            <span class="agent-score" style="background:#95a5a6">4/10</span>
+          </div>
+          <div class="agent-body">
+            <div class="agent-col"><div class="col-title">📌 核心结论</div><ul><li>PE 45.8x 偏高，需成长兑现支撑</li><li>PB 3.52x 偏高（PB-ROE 略不匹配，PB相对ROE偏高）</li><li>目标价区间：保守 10.25 / 中性 12.06 / 乐观 14.23</li></ul></div>
+            <div class="agent-col"><div class="col-title bull">🐂 多头论据</div><ul><li class='empty'>—</li></ul></div>
+            <div class="agent-col"><div class="col-title bear">🐻 空头论据</div><ul><li>PE 45.8x 偏高，估值天花板低</li><li>PB 3.52x 估值溢价较高</li><li>当前价已接近乐观目标价 14.23，短期向上空间有限</li></ul></div>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-header"><span class="agent-emoji">📊</span> 财报分析师
+            <span class="agent-score" style="background:#e74c3c">7/10</span>
+          </div>
+          <div class="agent-body">
+            <div class="agent-col"><div class="col-title">📌 核心结论</div><ul><li>营收同比 +0.0%（最新报告期）</li><li>归母净利同比 +0.0%（最新报告期）</li><li>ROE = 7.7%</li></ul></div>
+            <div class="agent-col"><div class="col-title bull">🐂 多头论据</div><ul><li>营收正增长 +0.0%</li><li>净利稳健增长 +0.0%</li></ul></div>
+            <div class="agent-col"><div class="col-title bear">🐻 空头论据</div><ul><li class='empty'>—</li></ul></div>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-header"><span class="agent-emoji">🏭</span> 产业策略师
+            <span class="agent-score" style="background:#95a5a6">6/10</span>
+          </div>
+          <div class="agent-body">
+            <div class="agent-col"><div class="col-title">📌 核心结论</div><ul><li>所属赛道：消费电子 / AI硬件</li><li>护城河（Porter五力综合）：⭐⭐⭐⭐⭐⭐···· (6/10)</li><li>景气周期位置：🌟🌟🌟🌟🌟🌟🌟··· (7/10)</li><li>主线催化：折叠屏大年, AI眼镜, 苹果链创新, 先进封装</li></ul></div>
+            <div class="agent-col"><div class="col-title bull">🐂 多头论据</div><ul><li>主线催化：苹果链创新</li></ul></div>
+            <div class="agent-col"><div class="col-title bear">🐻 空头论据</div><ul><li class='empty'>—</li></ul></div>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-header"><span class="agent-emoji">📈</span> 市场信号官
+            <span class="agent-score" style="background:#95a5a6">4/10</span>
+          </div>
+          <div class="agent-body">
+            <div class="agent-col"><div class="col-title">📌 核心结论</div><ul><li>RSI(14) = 51.6</li><li>MACD柱=+0.14</li><li>KDJ(K/D/J) = 40/29/62</li><li>60日位置 16%（60日低 30.83 / 高 55.32）</li><li>换手率 2.21%</li><li>短线支撑 ~30.83   压力位 ~55.32</li></ul></div>
+            <div class="agent-col"><div class="col-title bull">🐂 多头论据</div><ul><li>MACD 金叉，DIF=-2.96 DEA=-3.03</li><li>60日位置 16%，接近阶段低点，赔率较高</li></ul></div>
+            <div class="agent-col"><div class="col-title bear">🐻 空头论据</div><ul><li>均线空头排列，趋势向下</li><li>失守 MA60，中期结构偏弱</li></ul></div>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-header"><span class="agent-emoji">🧨</span> 逆向投资人
+            <span class="agent-score" style="background:#e74c3c">9/10</span>
+          </div>
+          <div class="agent-body">
+            <div class="agent-col"><div class="col-title">📌 核心结论</div><ul><li>⚠️ 已识别 1 条显著风险项（风险权重 1/10）：</li><li>   1. PE 45.8x 偏高，需要持续高增长才能消化</li><li>🦢 永远存在的黑天鹅（不可量化）：</li><li>   • 宏观：经济下行超预期 → 居民消费/企业资本开支收缩</li><li>   • 政策：行业监管政策突变（平台/医药/教育式整治）</li><li>   • 事件：大股东减持 / 定增解禁 / 管理层变动</li></ul></div>
+            <div class="agent-col"><div class="col-title bull">🐂 多头论据</div><ul><li class='empty'>—</li></ul></div>
+            <div class="agent-col"><div class="col-title bear">🐻 空头论据</div><ul><li>PE 45.8x 偏高，需要持续高增长才能消化</li></ul></div>
+          </div>
+        </div>
+  </div>
+
+  <!-- 催化 / 风险 -->
+  <div class="section">
+    <div class="section-title">🚀 关键催化 / 主线</div>
+    <div class="tags"><span class='tag'>折叠屏大年</span><span class='tag'>AI眼镜</span><span class='tag'>苹果链创新</span><span class='tag'>先进封装</span><span class='tag'>下一份财报窗口：2026-08-06</span></div>
+  </div>
+  <div class="section warnings">
+    <div class="section-title">⚠️ 风险预警</div>
+    <ul><li>⚠️ 外部：地缘冲突升级、汇率大幅波动、海外制裁</li><li>⚠️ 模型：历史表现不代表未来，任何技术指标都可能失效</li></ul>
+  </div>
+
+  <div class="footer">
+    本报告由 5 人 Agent 团队自动生成 · 仅供研究参考，不构成投资建议 · 市场有风险，入市需谨慎
+  </div>
+</div>
+</body>
+</html>

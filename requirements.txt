@@ -1,0 +1,7 @@
+# 执行3 股票看板 a-stock-dashboard （Trae） 依赖清单
+# 🔴 2026-10-15 由全局依赖体检生成 —— 此前本项目没有 requirements.txt，
+#    代码 import 的第三方包无任何记录，换机/重装即缺。
+#    生成方式：scripts/audit_all_projects_deps.py（扫代码实际 import，不依赖 venv）
+
+requests         # HTTP 请求（拉行情数据）
+tabulate         # 终端表格输出

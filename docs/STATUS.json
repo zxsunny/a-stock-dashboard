@@ -1,0 +1,144 @@
+{
+  "project": "a-stock-dashboard",
+  "lastChecked": "2026-11-17",
+  "description": "A股智能分析看板 - 个人学习向工具包（前端实时看板 + 后端多Agent分析引擎）。详见 docs/需求文档.md",
+  "statusValues": {
+    "open": "未解决",
+    "fixed": "已修复",
+    "partial": "部分解决",
+    "pending_eval": "待评估/固有约束"
+  },
+  "issues": [
+    {
+      "id": "P1",
+      "title": "前端估值分析取不到真实 PE/PB（请求URL缺字段，解析处硬编码为0）",
+      "status": "fixed",
+      "severity": "high",
+      "improvement": "#1",
+      "fixedAt": "2026-08-11",
+      "files": ["assets/app.js"],
+      "detail": "docs/问题与修改历史.md#P1"
+    },
+    {
+      "id": "P2",
+      "title": "产业策略师仅硬编码7只股票标签，其余退回默认值",
+      "status": "open",
+      "severity": "high",
+      "improvement": "#2",
+      "files": ["multi_agent_stock_analysis.py"],
+      "detail": "docs/问题与修改历史.md#P2"
+    },
+    {
+      "id": "P3",
+      "title": "估值目标价模型粗糙，存在循环论证且忽略增速",
+      "status": "fixed",
+      "severity": "high",
+      "improvement": "#4",
+      "fixedAt": "2026-08-24",
+      "files": ["multi_agent_stock_analysis.py"],
+      "detail": "docs/问题与修改历史.md#P3"
+    },
+    {
+      "id": "P10",
+      "title": "五维评分\"风险\"维度语义歧义（分越高=风险越低，与用户直觉相反）",
+      "status": "fixed",
+      "severity": "medium",
+      "improvement": "#9",
+      "fixedAt": "2026-08-24",
+      "files": ["multi_agent_stock_analysis.py", "assets/watchlist.js"],
+      "detail": "docs/问题与修改历史.md#P10"
+    },
+    {
+      "id": "P4",
+      "title": "新闻分类为纯关键词堆砌，EXCLUDE含地域词会误杀地缘/大宗财经",
+      "status": "open",
+      "severity": "medium",
+      "improvement": "#5",
+      "files": ["assets/app.js"],
+      "detail": "docs/问题与修改历史.md#P4"
+    },
+    {
+      "id": "P5",
+      "title": "MA60边界bug：K线不足60根时ma60=0，稳定误报站稳中期均线",
+      "status": "open",
+      "severity": "low",
+      "improvement": "#8",
+      "files": ["multi_agent_stock_analysis.py"],
+      "detail": "docs/问题与修改历史.md#P5"
+    },
+    {
+      "id": "P6",
+      "title": "自选股持久化来源混乱（内联/JS/localStorage/data文件），数量不一致",
+      "status": "open",
+      "severity": "medium",
+      "improvement": "#6",
+      "files": ["assets/app.js", "data/watchlist.json", "watchlist-seed.js"],
+      "detail": "docs/问题与修改历史.md#P6"
+    },
+    {
+      "id": "P7",
+      "title": "前端看板与后端分析引擎割裂、无联动",
+      "status": "fixed",
+      "severity": "low",
+      "improvement": "#7",
+      "fixedAt": "2026-08-11",
+      "files": ["server.py", "a-stock-dashboard.html", "assets/app.js", "start-server.bat", "multi_agent_stock_analysis.py"],
+      "detail": "docs/问题与修改历史.md#P7"
+    },
+    {
+      "id": "P8",
+      "title": "后端直接产出具体买卖评级/仓位，缺乏醒目免责",
+      "status": "open",
+      "severity": "high",
+      "improvement": "#3",
+      "files": ["multi_agent_stock_analysis.py"],
+      "detail": "docs/问题与修改历史.md#P8"
+    },
+    {
+      "id": "P9",
+      "title": "依赖非官方公开接口，随时可能失效/限频",
+      "status": "pending_eval",
+      "severity": "constraint",
+      "improvement": null,
+      "files": ["assets/app.js", "multi_agent_stock_analysis.py"],
+      "detail": "docs/问题与修改历史.md#P9"
+    },
+    {
+      "id": "P11",
+      "title": "requirements.txt 未声明 Python ≥ 3.10（multi_agent_stock_analysis.py:100 用 PEP 604 联合类型，3.9 下 import 阶段崩溃）",
+      "status": "open",
+      "severity": "high",
+      "improvement": "#10",
+      "files": ["requirements.txt", "multi_agent_stock_analysis.py"],
+      "detail": "docs/问题与修改历史.md#P11"
+    },
+    {
+      "id": "P12",
+      "title": "分析报告「营收正增长」「净利稳健增长」恒显示 +0.0%（数据口径问题，未深查）",
+      "status": "open",
+      "severity": "low",
+      "improvement": "#11",
+      "files": ["multi_agent_stock_analysis.py"],
+      "detail": "docs/问题与修改历史.md#P12"
+    }
+  ],
+  "improvements": [
+    {"id": "#1", "title": "修复前端估值死代码（补f162/f167/f116/f168字段）", "priority": "high", "status": "fixed", "fixedAt": "2026-08-11", "issue": "P1"},
+    {"id": "#2", "title": "产业策略师去硬编码（接动态行业/概念或LLM）", "priority": "high", "status": "open", "issue": "P2"},
+    {"id": "#3", "title": "投资建议加醒目免责+弱化具体仓位数字", "priority": "high", "status": "open", "issue": "P8"},
+    {"id": "#4", "title": "估值模型改为相对PE法三档区间+安全边际约束", "priority": "medium", "status": "fixed", "fixedAt": "2026-08-24", "issue": "P3"},
+    {"id": "#5", "title": "新闻EXCLUDE列表收紧，避免误杀大宗商品/地缘财经", "priority": "medium", "status": "open", "issue": "P4"},
+    {"id": "#6", "title": "统一自选股持久化为单源（localStorage为主）", "priority": "medium", "status": "open", "issue": "P6"},
+    {"id": "#7", "title": "打通前后端（看板一键触发并展示后端报告）", "priority": "low", "status": "fixed", "fixedAt": "2026-08-11", "issue": "P7"},
+    {"id": "#8", "title": "补MA60边界保护（K线不足60根时不误报）", "priority": "low", "status": "open", "issue": "P5"},
+    {"id": "#9", "title": "五维评分语义统一（风险→安全，所有维度分越高越好）", "priority": "medium", "status": "fixed", "fixedAt": "2026-08-24", "issue": "P10"},
+    {"id": "#10", "title": "requirements.txt 声明 Python ≥ 3.10 及运行环境说明", "priority": "high", "status": "open", "issue": "P11"},
+    {"id": "#11", "title": "排查报告营收/净利增速恒为 +0.0% 的数据口径问题", "priority": "low", "status": "open", "issue": "P12"}
+  ],
+  "conventions": {
+    "runEntry": "start-server.bat 或 python server.py 8888（默认端口已改为8888，避开本机知识学习超级助手占用的8765；如需自定义可传参，如 python server.py 8799）",
+    "aiReportRequiresServer": true,
+    "nonOfficialApis": "依赖非官方公开接口，可能随时失效，不作为生产工具",
+    "docsDir": "docs/"
+  }
+}

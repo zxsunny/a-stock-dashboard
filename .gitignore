@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store
+
+# IDE / 工具目录
+.trae-html-share-packages/
+.workbuddy/
+.idea/
+.vscode/
+
+# 日志与临时
+*.log
