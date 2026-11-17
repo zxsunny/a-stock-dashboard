@@ -1,6 +1,6 @@
 {
   "project": "a-stock-dashboard",
-  "lastChecked": "2026-11-17",
+  "lastChecked": "2026-11-18",
   "description": "A股智能分析看板 - 个人学习向工具包（前端实时看板 + 后端多Agent分析引擎）。详见 docs/需求文档.md",
   "statusValues": {
     "open": "未解决",
