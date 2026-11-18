@@ -70,11 +70,47 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/analyze":
             self._handle_analyze(parsed)
             return
+        if parsed.path == "/api/valuation_history":
+            self._handle_valuation_history(parsed)
+            return
         if parsed.path == "/api/health":
             self._send_json(200, {"ok": True})
             return
         # 默认：静态文件
         super().do_GET()
+
+    def _handle_valuation_history(self, parsed):
+        """返回近5年估值序列（PE/PB/收盘价）与百分位，供前端画历史估值走势（改进#12）"""
+        qs = urllib.parse.parse_qs(parsed.query)
+        code = (qs.get("code") or [""])[0].strip()
+        if not code or not code.isdigit() or len(code) != 6:
+            self._send_json(400, {"ok": False, "error": "请提供 6 位股票代码，例如 ?code=600519"})
+            return
+        try:
+            raw = msa.StockRawData(code=code)
+            msa.fetch_valuation_history(raw)
+        except Exception as e:  # noqa: BLE001
+            self._send_json(502, {"ok": False, "error": f"估值历史获取失败：{e}"})
+            return
+        if not raw.valuation_history:
+            self._send_json(404, {"ok": False, "error": "估值历史数据暂不可用（可能停牌/新股/接口异常）"})
+            return
+        series = [
+            {"date": h["date"], "pe": h["pe"], "pb": h["pb"], "close": h["close"]}
+            for h in raw.valuation_history
+        ]
+        self._send_json(200, {
+            "ok": True,
+            "code": code,
+            "history_len": len(series),
+            "series": series,
+            "pe_5y_pct": raw.pe_5y_pct,
+            "pb_5y_pct": raw.pb_5y_pct,
+            "pe_5y_range": [raw.pe_5y_min, raw.pe_5y_max],
+            "pb_5y_range": [raw.pb_5y_min, raw.pb_5y_max],
+            "high_5y": raw.high_5y,
+            "low_5y": raw.low_5y,
+        })
 
     def _handle_analyze(self, parsed):
         qs = urllib.parse.parse_qs(parsed.query)

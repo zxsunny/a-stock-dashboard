@@ -157,6 +157,18 @@ class StockRawData:
     # 行业 / 概念（东财 push2 f127 / f128，供产业策略师动态取数）
     industry: str = ""
     concept: str = ""
+    # 估值历史（近 5 年序列与百分位，改进#12）
+    valuation_history: List[dict] = field(default_factory=list)  # [{date,pe,pb,ps,peg,pcf,close}]
+    pe_5y_pct: float = 0.0        # 当前 PE 在近 5 年交易日序列的百分位
+    pb_5y_pct: float = 0.0        # 当前 PB 在近 5 年交易日序列的百分位
+    pe_5y_min: float = 0.0
+    pe_5y_max: float = 0.0
+    pb_5y_min: float = 0.0
+    pb_5y_max: float = 0.0
+    high_5y: float = 0.0          # 近 5 年最高收盘价
+    low_5y: float = 0.0           # 近 5 年最低收盘价
+    # 宏观（CPI/PPI/PMI/GDP 最新值）
+    macro: dict = field(default_factory=dict)
     # 技术指标（从 K 线计算）
     ma5: float = 0.0
     ma10: float = 0.0
@@ -558,12 +570,144 @@ def fetch_industry(data: StockRawData):
         print(f"  [数据层] 行业接口异常: {e}")
 
 
+def _fetch_em_data_utf8(url: str) -> dict:
+    """拉取东财 datacenter JSONP 并按 UTF-8 硬解码（数字字段可读、中文不乱码，改进#12）。
+
+    ⚠ 东财 datacenter 接口经 apparent_encoding 常误判为 ptcp154 等导致中文乱码，
+    因此直接按 UTF-8 解码 JSONP 内容。
+    """
+    try:
+        raw = _session().get(url, headers=HEADERS_EM, timeout=10).content
+        txt = raw.decode("utf-8", errors="ignore")
+        start = txt.find("(")
+        end = txt.rfind(")")
+        return json.loads(txt[start + 1:end]) if start != -1 and end != -1 else {}
+    except Exception as e:
+        print(f"  [数据层] EM UTF8 接口失败 {url[:60]}...: {e}")
+        return {}
+
+
+def fetch_valuation_history(data: StockRawData):
+    """拉取近 5 年估值序列（东财 RPT_VALUEANALYSIS_DET）并计算历史百分位（改进#12）。
+
+    序列含 PE-TTM / PB / PS / PEG / 市现率 / 收盘价；百分位基于近 5 年交易日（约 1250 个）。
+    接口偶发不可用/数据不足时静默降级（各字段保持 0），不编造。
+    """
+    hist = []
+    try:
+        for page in range(1, 4):  # 500 条/页 × 3 页 ≈ 5 年交易日
+            url = (
+                "https://datacenter-web.eastmoney.com/api/data/v1/get?callback=cb"
+                "&sortColumns=TRADE_DATE&sortTypes=-1&pageSize=500&pageNumber=" + str(page) +
+                "&reportName=RPT_VALUEANALYSIS_DET&columns=ALL"
+                f"&filter=(SECURITY_CODE%3D%22{data.code}%22)"
+            )
+            obj = _fetch_em_data_utf8(url)
+            rows = ((obj or {}).get("result") or {}).get("data") if isinstance(obj, dict) else None
+            if not rows:
+                break
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+                def _f(k, d=0.0):
+                    v = r.get(k)
+                    if v in (None, "-"):
+                        return d
+                    try:
+                        return float(v)
+                    except (TypeError, ValueError):
+                        return d
+                hist.append({
+                    "date": (r.get("TRADE_DATE") or "")[:10],
+                    "pe": _f("PE_TTM"), "pb": _f("PB_MRQ"),
+                    "ps": _f("PS_TTM"), "peg": _f("PEG_CAR"),
+                    "pcf": _f("PCF_OCF_TTM"), "close": _f("CLOSE_PRICE"),
+                })
+        if len(hist) < 60:
+            print(f"  [数据层] 估值历史数据不足({len(hist)}条)，跳过百分位计算")
+            return
+        hist.sort(key=lambda x: x["date"])  # 升序
+        data.valuation_history = hist
+        # 当前值优先取最新交易日，其次实时接口
+        cur_pe = hist[-1]["pe"] or data.pe_ttm
+        cur_pb = hist[-1]["pb"] or data.pb
+        pes = sorted(h["pe"] for h in hist if h["pe"] > 0)
+        pbs = sorted(h["pb"] for h in hist if h["pb"] > 0)
+        closes = [h["close"] for h in hist if h["close"] > 0]
+
+        def _pct(vals, cur):
+            if not vals or cur <= 0:
+                return 50.0
+            n = sum(1 for v in vals if v <= cur)
+            return round(n / len(vals) * 100, 1)
+
+        data.pe_5y_pct = _pct(pes, cur_pe)
+        data.pb_5y_pct = _pct(pbs, cur_pb)
+        data.pe_5y_min, data.pe_5y_max = (pes[0], pes[-1]) if pes else (0.0, 0.0)
+        data.pb_5y_min, data.pb_5y_max = (pbs[0], pbs[-1]) if pbs else (0.0, 0.0)
+        data.low_5y, data.high_5y = (min(closes), max(closes)) if closes else (0.0, 0.0)
+        print(f"  [数据层] 估值历史(东财): {len(hist)}条 {hist[0]['date']}~{hist[-1]['date']} "
+              f"PE 近5年{data.pe_5y_pct}%位(区间{data.pe_5y_min:.1f}~{data.pe_5y_max:.1f}) "
+              f"PB 近5年{data.pb_5y_pct}%位")
+    except Exception as e:
+        print(f"  [数据层] 估值历史接口异常: {e}")
+
+
+def fetch_macro(data: StockRawData):
+    """拉取宏观数据最新值（CPI/PPI/PMI/GDP，东财数据中心，改进#12）。
+
+    macro 结构：{cpi:{report_date,main(同比%),sub(环比%)}, ppi:{...,main(同比%)},
+    pmi:{...,main(制造业指数),sub(非制造业指数)}, gdp:{...,main(同比%)}}
+    """
+    macro = {}
+    try:
+        reports = {
+            "cpi": ("RPT_ECONOMY_CPI", "NATIONAL_SAME", "NATIONAL_SEQUENTIAL"),
+            "ppi": ("RPT_ECONOMY_PPI", "BASE_SAME", None),
+            "pmi": ("RPT_ECONOMY_PMI", "MAKE_INDEX", "NMAKE_INDEX"),
+            "gdp": ("RPT_ECONOMY_GDP", "SUM_SAME", None),
+        }
+        for key, (rn, main, sub) in reports.items():
+            url = (
+                "https://datacenter-web.eastmoney.com/api/data/v1/get?callback=cb"
+                "&sortColumns=REPORT_DATE&sortTypes=-1&pageSize=1&pageNumber=1"
+                "&reportName=" + rn + "&columns=ALL"
+            )
+            obj = _fetch_em_data_utf8(url)
+            rows = ((obj or {}).get("result") or {}).get("data") if isinstance(obj, dict) else None
+            if rows and isinstance(rows[0], dict):
+                r = rows[0]
+
+                def _g(k, d=None):
+                    v = r.get(k)
+                    if v in (None, "-", ""):
+                        return d
+                    try:
+                        return round(float(v), 2)
+                    except (TypeError, ValueError):
+                        return d
+
+                macro[key] = {
+                    "report_date": (r.get("REPORT_DATE") or "")[:10],
+                    "main": _g(main),
+                    "sub": _g(sub) if sub else None,
+                }
+        data.macro = macro
+        if macro:
+            parts = [f"{k}={v['main']}" for k, v in macro.items() if v and v.get("main") is not None]
+            print(f"  [数据层] 宏观(东财): " + " | ".join(parts))
+    except Exception as e:
+        print(f"  [数据层] 宏观接口异常: {e}")
+
+
 def load_all_data(code: str) -> StockRawData:
     raw = StockRawData(code=code)
     fetch_realtime(raw)
     fetch_klines_and_ta(raw)
     fetch_financial_summary(raw)
     fetch_industry(raw)
+    fetch_valuation_history(raw)
+    fetch_macro(raw)
     return raw
 
 
@@ -700,8 +844,76 @@ class ValuationAgent:
             tgt_optimistic = round(data.price * 1.20, 2)
 
         score = round((pe_score * 0.5 + pb_score * 0.5))
+
+        # ---- 改进#12：历史估值百分位（近5年交易日）与估值合理性 ----
+        pct_zone = ""
+        if data.pe_5y_pct > 0 or data.pb_5y_pct > 0:
+            pe_low = 0 < data.pe_5y_pct < 30
+            pe_high = data.pe_5y_pct > 70
+            pb_low = 0 < data.pb_5y_pct < 30
+            pb_high = data.pb_5y_pct > 70
+            adj = (1 if pe_low else -1 if pe_high else 0) + (1 if pb_low else -1 if pb_high else 0)
+            score = max(0, min(10, score + adj))
+            if pe_low and pb_low:
+                pct_zone = "明显偏低"
+            elif pe_high or pb_high:
+                pct_zone = "偏高"
+            else:
+                pct_zone = "合理中枢"
+
+        # ---- 改进#12：补充估值指标（PS/PEG/市现率，取自历史序列最新交易日） ----
+        ind = {}
+        if data.valuation_history:
+            last = data.valuation_history[-1]
+            ind["ps"] = round(last["ps"], 2) if last.get("ps", 0) > 0 else None
+            ind["peg"] = round(last["peg"], 2) if last.get("peg", 0) and last["peg"] > 0 else None
+            ind["pcf"] = round(last["pcf"], 2) if last.get("pcf", 0) > 0 else None
+
+        # ---- 改进#12：宏观经济解读（仅陈述数据与一般逻辑，不构成投资建议） ----
+        m = data.macro or {}
+        macro_conc = []
+        macro_bull = []
+        macro_bear = []
+        if m.get("cpi") and m["cpi"].get("main") is not None:
+            cpi = m["cpi"]["main"]
+            macro_conc.append(f"宏观：CPI同比 {cpi:.1f}%（{m['cpi'].get('report_date','')}）")
+            if 0 <= cpi <= 3:
+                macro_bull.append("CPI 温和（0~3%），通胀压力小、货币政策有空间")
+            elif cpi > 3:
+                macro_bear.append(f"CPI {cpi:.1f}% 偏高，通胀可能压制估值")
+            else:
+                macro_bear.append(f"CPI {cpi:.1f}% 偏弱，或反映需求不足")
+        if m.get("ppi") and m["ppi"].get("main") is not None:
+            ppi = m["ppi"]["main"]
+            macro_conc.append(f"PPI同比 {ppi:.1f}%（{m['ppi'].get('report_date','')}）")
+            if ppi >= 0:
+                macro_bull.append("PPI 转正，上游/工业盈利改善")
+            else:
+                macro_bear.append(f"PPI {ppi:.1f}% 为负，工业品价格承压")
+        if m.get("pmi") and m["pmi"].get("main") is not None:
+            pmi = m["pmi"]["main"]
+            macro_conc.append(f"制造业PMI {pmi:.1f}（{m['pmi'].get('report_date','')}）")
+            if pmi >= 50:
+                macro_bull.append("PMI 在荣枯线上方，制造业景气扩张")
+            else:
+                macro_bear.append("PMI 低于 50 荣枯线，制造业景气收缩")
+        if m.get("gdp") and m["gdp"].get("main") is not None:
+            gdp = m["gdp"]["main"]
+            macro_conc.append(f"GDP同比 {gdp:.1f}%（{m['gdp'].get('report_date','')}）")
+            if gdp >= 5:
+                macro_bull.append("GDP 增速较快，宏观需求有支撑")
+
         conclusions = [pe_concl, pb_concl,
                        f"目标价区间：保守 {tgt_conservative} / 中性 {tgt_neutral} / 乐观 {tgt_optimistic}"]
+        if data.pe_5y_pct > 0 or data.pb_5y_pct > 0:
+            conclusions.append(
+                f"历史估值（近5年交易日）：PE {data.pe_5y_pct:.0f}%位 / PB {data.pb_5y_pct:.0f}%位 → 估值{pct_zone}"
+            )
+        if ind.get("ps"):
+            conclusions.append(f"PS-TTM {ind['ps']:.1f}x（近5年最新交易日）")
+        if ind.get("peg"):
+            conclusions.append(f"PEG {ind['peg']:.2f}（<1 通常隐含低估，仅供参考）")
+        conclusions += macro_conc
         bulls = []
         bears = []
         if pe_score >= 7: bulls.append(f"PE {pe:.1f}x 偏低/合理，估值安全边际充足")
@@ -713,6 +925,12 @@ class ValuationAgent:
         # "接近乐观目标价" 实际上是偏空信号（该卖了），归入空头
         if tgt_optimistic > 0 and data.price >= tgt_optimistic * 0.98:
             bears.append(f"当前价已接近乐观目标价 {tgt_optimistic:.2f}，短期向上空间有限")
+        if pct_zone == "明显偏低":
+            bulls.append("历史分位明显偏低，中长期估值修复空间较大")
+        elif pct_zone == "偏高":
+            bears.append("历史分位偏高，需警惕估值回归风险")
+        bulls += macro_bull
+        bears += macro_bear
 
         extra = {
             "targets": {
@@ -722,6 +940,18 @@ class ValuationAgent:
             },
             "fair_pe_used": pe_neutral if 'pe_neutral' in dir() else 20,
             "pe_current": round(pe_current, 2) if pe_current > 0 else 0,
+            "valuation": {
+                "pe_5y_pct": data.pe_5y_pct,
+                "pb_5y_pct": data.pb_5y_pct,
+                "pe_5y_range": [data.pe_5y_min, data.pe_5y_max],
+                "pb_5y_range": [data.pb_5y_min, data.pb_5y_max],
+                "ps_ttm": ind.get("ps"),
+                "peg": ind.get("peg"),
+                "pcf": ind.get("pcf"),
+                "zone": pct_zone,
+                "macro": data.macro,
+                "history_len": len(data.valuation_history),
+            },
         }
         out = AgentOutput(role=self.NAME, score=score, conclusions=conclusions,
                           bull_points=bulls, bear_points=bears, extra=extra)
@@ -1437,6 +1667,66 @@ def build_html_report(report: FinalReport, data: StockRawData) -> str:
     catalysts_html = "".join(f"<span class='tag'>{c}</span>" for c in report.catalysts)
     warnings_html = "".join(f"<li>⚠️ {w}</li>" for w in report.warnings)
 
+    # ---- 估值合理性区块（改进#12：近5年历史分位 + 补充指标 + 宏观环境） ----
+    val_html = ""
+    va_extra = {}
+    if report.agent_outputs.get("估值分析师"):
+        va_extra = report.agent_outputs["估值分析师"].extra.get("valuation") or {}
+    if va_extra.get("history_len", 0) >= 60:
+        def _pct_bar(label, pct, cur, rng):
+            if not (0 <= pct <= 100):
+                return ""
+            color = "#e74c3c" if pct > 70 else ("#2ecc71" if pct < 30 else "#f39c12")
+            rng_txt = f" · 近5年区间 {rng[0]:.1f}~{rng[1]:.1f}" if rng else ""
+            return (
+                f'<div style="margin-bottom:8px;"><div style="font-size:12px;color:#a0a4b0;">'
+                f'{label} 当前 <b>{cur:.1f}</b>{rng_txt} · '
+                f'<b style="color:{color}">近5年 {pct:.0f}% 分位</b></div>'
+                f'<div style="height:8px;background:#2a2e3a;border-radius:4px;overflow:hidden;">'
+                f'<div style="width:{min(100, pct):.1f}%;height:100%;background:{color};border-radius:4px;"></div></div></div>'
+            )
+        bars = ""
+        bars += _pct_bar("PE-TTM", va_extra.get("pe_5y_pct", 0), data.pe_ttm, va_extra.get("pe_5y_range"))
+        bars += _pct_bar("PB", va_extra.get("pb_5y_pct", 0), data.pb, va_extra.get("pb_5y_range"))
+        inds = ""
+        ind_items = [
+            ("PE-TTM", data.pe_ttm, va_extra.get("pe_5y_range")),
+            ("PB", data.pb, va_extra.get("pb_5y_range")),
+            ("PS-TTM", va_extra.get("ps_ttm"), None),
+            ("PEG", va_extra.get("peg"), None),
+            ("市现率(PCF)", va_extra.get("pcf"), None),
+        ]
+        for label, v, rng in ind_items:
+            if v is None or v <= 0:
+                val_cell = "数据暂缺"
+            else:
+                val_cell = f"{v:.2f}"
+                if rng:
+                    val_cell += f"<br><span style='font-size:11px;color:#7a8090'>(5y {rng[0]:.1f}~{rng[1]:.1f})</span>"
+            inds += f'<div class="trade-item"><div class="label">{label}</div><div class="value">{val_cell}</div></div>'
+        macro = va_extra.get("macro") or {}
+        macro_grid = ""
+        for key, label in (("cpi", "CPI同比"), ("ppi", "PPI同比"), ("pmi", "制造业PMI"), ("gdp", "GDP同比")):
+            it = macro.get(key) or {}
+            v = it.get("main")
+            v_txt = f"{v}" if v is not None else "—"
+            macro_grid += (
+                f'<div class="trade-item"><div class="label">{label}'
+                f'<br><span style="font-size:10px;color:#7a8090">{it.get("report_date", "")}</span></div>'
+                f'<div class="value">{v_txt}</div></div>'
+            )
+        val_html = (
+            '<div class="section">'
+            '<div class="section-title">📐 估值合理性（近5年历史分位 + 宏观环境）</div>'
+            f'<div style="margin-bottom:12px;">{bars}</div>'
+            f'<div class="trade-grid">{inds}</div>'
+            '<div class="trade-note" style="margin-top:12px;">宏观环境（演示参考，不构成投资建议）：</div>'
+            f'<div class="trade-grid">{macro_grid}</div>'
+            '<div style="font-size:11px;color:#7a8090;margin-top:8px;">百分位基于近5年交易日序列；'
+            '数据源：东方财富数据中心公开接口。非交易时段或接口异常时相关项显示"数据暂缺"。</div>'
+            '</div>'
+        )
+
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -1586,6 +1876,8 @@ def build_html_report(report: FinalReport, data: StockRawData) -> str:
       <div class="trade-item"><div class="label">当前价</div><div class="value">{report.price:.2f} 元</div></div>
     </div>
   </div>
+
+  {val_html}
 
   <!-- Agent 详情 -->
   <div class="section">
