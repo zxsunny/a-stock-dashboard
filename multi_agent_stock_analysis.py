@@ -167,8 +167,14 @@ class StockRawData:
     pb_5y_max: float = 0.0
     high_5y: float = 0.0          # 近 5 年最高收盘价
     low_5y: float = 0.0           # 近 5 年最低收盘价
-    # 宏观（CPI/PPI/PMI/GDP 最新值）
+    # 宏观（CPI/PPI/PMI/GDP/M2 最新值）
     macro: dict = field(default_factory=dict)
+    # 机构一致预期（forecast：EPS 预测 / 目标价区间 / 机构评级，改进#14）
+    forecast: dict = field(default_factory=dict)
+    # 官方同比（financials 利润表 OPERATE_INCOME_YOY / PARENT_NETPROFIT_YOY，改进#14）
+    revenue_yoy: float = 0.0
+    net_profit_yoy: float = 0.0
+    yoy_official: bool = False   # 上面两值是否来自官方报表同比（否则为期间环比推算）
     # 技术指标（从 K 线计算）
     ma5: float = 0.0
     ma10: float = 0.0
@@ -595,20 +601,13 @@ def fetch_valuation_history(data: StockRawData):
     """
     hist = []
     try:
-        for page in range(1, 4):  # 500 条/页 × 3 页 ≈ 5 年交易日
-            url = (
-                "https://datacenter-web.eastmoney.com/api/data/v1/get?callback=cb"
-                "&sortColumns=TRADE_DATE&sortTypes=-1&pageSize=500&pageNumber=" + str(page) +
-                "&reportName=RPT_VALUEANALYSIS_DET&columns=ALL"
-                f"&filter=(SECURITY_CODE%3D%22{data.code}%22)"
-            )
-            obj = _fetch_em_data_utf8(url)
-            rows = ((obj or {}).get("result") or {}).get("data") if isinstance(obj, dict) else None
-            if not rows:
-                break
-            for r in rows:
-                if not isinstance(r, dict):
-                    continue
+        # 改进#14：优先用小时助手 skill 的 stock_value_em（2018 年至今，更长历史更全字段），
+        # 失败则回退东财 RPT_VALUEANALYSIS_DET（近 5 年）。
+        sv = _call_xiaoshi(["--tail", "--limit", "2000", "akshare", "--adapter", "stock_value_em",
+                            "--params", json.dumps({"symbol": data.code})])
+        sv_rows = sv.get("data") if isinstance(sv, dict) else None
+        if sv_rows and isinstance(sv_rows[0], dict):
+            for r in sv_rows:
                 def _f(k, d=0.0):
                     v = r.get(k)
                     if v in (None, "-"):
@@ -618,15 +617,55 @@ def fetch_valuation_history(data: StockRawData):
                     except (TypeError, ValueError):
                         return d
                 hist.append({
-                    "date": (r.get("TRADE_DATE") or "")[:10],
-                    "pe": _f("PE_TTM"), "pb": _f("PB_MRQ"),
-                    "ps": _f("PS_TTM"), "peg": _f("PEG_CAR"),
-                    "pcf": _f("PCF_OCF_TTM"), "close": _f("CLOSE_PRICE"),
+                    "date": (r.get("数据日期") or "")[:10],
+                    "pe": _f("PE(TTM)"), "pb": _f("市净率"),
+                    "ps": _f("市销率"), "peg": _f("PEG值"),
+                    "pcf": _f("市现率"), "close": _f("当日收盘价"),
                 })
+            src_tag = "小时助手stock_value_em(2018年至今)"
+        else:
+            for page in range(1, 4):  # 500 条/页 × 3 页 ≈ 5 年交易日
+                url = (
+                    "https://datacenter-web.eastmoney.com/api/data/v1/get?callback=cb"
+                    "&sortColumns=TRADE_DATE&sortTypes=-1&pageSize=500&pageNumber=" + str(page) +
+                    "&reportName=RPT_VALUEANALYSIS_DET&columns=ALL"
+                    f"&filter=(SECURITY_CODE%3D%22{data.code}%22)"
+                )
+                obj = _fetch_em_data_utf8(url)
+                rows = ((obj or {}).get("result") or {}).get("data") if isinstance(obj, dict) else None
+                if not rows:
+                    break
+                for r in rows:
+                    if not isinstance(r, dict):
+                        continue
+                    def _f(k, d=0.0, _r=r):
+                        v = _r.get(k)
+                        if v in (None, "-"):
+                            return d
+                        try:
+                            return float(v)
+                        except (TypeError, ValueError):
+                            return d
+                    hist.append({
+                        "date": (r.get("TRADE_DATE") or "")[:10],
+                        "pe": _f("PE_TTM"), "pb": _f("PB_MRQ"),
+                        "ps": _f("PS_TTM"), "peg": _f("PEG_CAR"),
+                        "pcf": _f("PCF_OCF_TTM"), "close": _f("CLOSE_PRICE"),
+                    })
+            src_tag = "东财RPT_VALUEANALYSIS_DET(近5年)"
         if len(hist) < 60:
             print(f"  [数据层] 估值历史数据不足({len(hist)}条)，跳过百分位计算")
             return
         hist.sort(key=lambda x: x["date"])  # 升序
+        # 统一「近5年」口径：stock_value_em 返回 2018 年至今，需裁剪到最后交易日往前 5 年
+        try:
+            last_dt = datetime.datetime.strptime(hist[-1]["date"], "%Y-%m-%d").date()
+            cutoff = last_dt.replace(year=last_dt.year - 5).isoformat()
+            trimmed = [h for h in hist if h["date"] >= cutoff]
+            if len(trimmed) >= 60:
+                hist = trimmed
+        except (ValueError, KeyError):
+            pass
         data.valuation_history = hist
         # 当前值优先取最新交易日，其次实时接口
         cur_pe = hist[-1]["pe"] or data.pe_ttm
@@ -646,7 +685,7 @@ def fetch_valuation_history(data: StockRawData):
         data.pe_5y_min, data.pe_5y_max = (pes[0], pes[-1]) if pes else (0.0, 0.0)
         data.pb_5y_min, data.pb_5y_max = (pbs[0], pbs[-1]) if pbs else (0.0, 0.0)
         data.low_5y, data.high_5y = (min(closes), max(closes)) if closes else (0.0, 0.0)
-        print(f"  [数据层] 估值历史(东财): {len(hist)}条 {hist[0]['date']}~{hist[-1]['date']} "
+        print(f"  [数据层] 估值历史({src_tag}): {len(hist)}条 {hist[0]['date']}~{hist[-1]['date']} "
               f"PE 近5年{data.pe_5y_pct}%位(区间{data.pe_5y_min:.1f}~{data.pe_5y_max:.1f}) "
               f"PB 近5年{data.pb_5y_pct}%位")
     except Exception as e:
@@ -692,12 +731,143 @@ def fetch_macro(data: StockRawData):
                     "main": _g(main),
                     "sub": _g(sub) if sub else None,
                 }
+        # M2（小时助手 skill：macro_china_money_supply，改进#14）
+        m2obj = _call_xiaoshi(["akshare", "--adapter", "macro_china_money_supply"])
+        m2rows = m2obj.get("data") if isinstance(m2obj, dict) else None
+        if m2rows:
+            r = m2rows[0]
+            m2_yoy = r.get("货币和准货币(M2)-同比增长")
+            if m2_yoy is not None:
+                try:
+                    m2_yoy = round(float(m2_yoy), 2)
+                except (TypeError, ValueError):
+                    m2_yoy = None
+            macro["m2"] = {"report_date": str(r.get("月份") or ""), "main": m2_yoy, "sub": None}
         data.macro = macro
         if macro:
             parts = [f"{k}={v['main']}" for k, v in macro.items() if v and v.get("main") is not None]
-            print(f"  [数据层] 宏观(东财): " + " | ".join(parts))
+            print(f"  [数据层] 宏观(东财/小时助手): " + " | ".join(parts))
     except Exception as e:
         print(f"  [数据层] 宏观接口异常: {e}")
+
+
+def _call_xiaoshi(args: List[str], timeout: int = 90) -> dict:
+    """子进程调用小时助手 skill 的 fetch.py（改进#14）。
+
+    该 skill 提供经校验的金融数据（保留来源/时点/单位/失败状态，不编造）。
+    返回解析后的 dict（含 status/data）；skill 不可用或调用失败返回 None。
+    """
+    import os
+    import subprocess
+    skill_dir = "/Users/zhangxu/2.1 学习 AI 笔记与练习/5. 我的Skills/xiaoshi-local-sources 金融分析"
+    py = os.path.join(skill_dir, ".venv", "bin", "python")
+    fetch = os.path.join(skill_dir, "scripts", "fetch.py")
+    if not os.path.exists(fetch) or not os.path.exists(py):
+        return None
+    try:
+        r = subprocess.run([py, fetch] + args, capture_output=True, text=True, timeout=timeout)
+        obj = json.loads(r.stdout) if r.stdout.strip() else {}
+        return obj if isinstance(obj, dict) else None
+    except Exception as e:
+        print(f"  [数据层] 小时助手skill调用失败: {e}")
+        return None
+
+
+def fetch_forecast(data: StockRawData):
+    """机构一致预期（forecast：EPS 预测 / 目标价区间 / 机构评级，改进#14）。
+
+    数据源：小时助手 skill `forecast` → 东财盈利预期报表；skill 不可用则跳过。
+    """
+    obj = _call_xiaoshi(["forecast", "--symbol", data.code])
+    rows = obj.get("data") if isinstance(obj, dict) else None
+    if not rows or not isinstance(rows[0], dict):
+        return
+
+    def _g(k, d=None):
+        v = rows[0].get(k)
+        if v in (None, "-", ""):
+            return d
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return d
+
+    r = rows[0]
+
+    def _rnd(v, n=2):
+        return round(v, n) if isinstance(v, float) else v
+
+    data.forecast = {
+        "eps": {
+            "y1": _rnd(_g("EPS1")), "y2": _rnd(_g("EPS2")),
+            "y3": _rnd(_g("EPS3")), "y4": _rnd(_g("EPS4")),
+            "mark1": r.get("YEAR_MARK1"), "mark2": r.get("YEAR_MARK2"),
+            "mark3": r.get("YEAR_MARK3"), "mark4": r.get("YEAR_MARK4"),
+            "year1": r.get("YEAR1"), "year2": r.get("YEAR2"),
+            "year3": r.get("YEAR3"), "year4": r.get("YEAR4"),
+        },
+        "aim_price_max": _rnd(_g("DEC_AIMPRICEMAX")),
+        "aim_price_min": _rnd(_g("DEC_AIMPRICEMIN")),
+        "org_num": _g("RATING_ORG_NUM"),
+        "rating_buy": _g("RATING_BUY_NUM"),
+        "rating_add": _g("RATING_ADD_NUM"),
+        "industry": r.get("INDUSTRY_BOARD"),
+    }
+    if data.forecast["eps"].get("y1"):
+        e = data.forecast["eps"]
+        print(f"  [数据层] 机构一致预期(小时助手): {data.forecast.get('org_num')}家机构 "
+              f"{e.get('year2')}{e.get('mark2')} EPS {e.get('y2')} "
+              f"目标价 {data.forecast.get('aim_price_min')}~{data.forecast.get('aim_price_max')}")
+
+
+def fetch_financials_rev(data: StockRawData):
+    """真实财报利润表（financials，改进#14）：仅在财务为降级估算时用真实历史
+    营收/净利填充，并取官方同比（OPERATE_INCOME_YOY / PARENT_NETPROFIT_YOY）。
+
+    数据源：小时助手 skill `financials` → 东财三大报表；skill 不可用则保持原估算。
+    """
+    # 已有真实多期净利（EM 数据中心成功）→ 不需要
+    if len(data.net_profit) >= 2 and sum(abs(x) for x in data.net_profit) > 1e-3:
+        return
+    obj = _call_xiaoshi(["financials", "--symbol", data.code, "--statement", "profit", "--page", "1"])
+    rows = obj.get("data") if isinstance(obj, dict) else None
+    if not rows or not isinstance(rows[0], dict):
+        return
+    rows_sorted = sorted(rows, key=lambda r: (r.get("REPORT_DATE") or ""))  # 升序
+    revs, nps, dates = [], [], []
+    for r in rows_sorted:
+        def _g(k, d=0.0):
+            v = r.get(k)
+            if v in (None, "-", ""):
+                return d
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return d
+        rd = (r.get("REPORT_DATE") or "")[:10]
+        if not rd:
+            continue
+        dates.append(rd)
+        revs.append(_g("OPERATE_INCOME") / 1e8)        # 元 → 亿
+        nps.append(_g("PARENT_NETPROFIT") / 1e8)
+    if len(revs) >= 2 and sum(abs(x) for x in nps) > 1e-3:
+        data.revenue = revs
+        data.net_profit = nps
+        data.report_dates = dates
+        latest = rows_sorted[-1]
+        def _gy(k):
+            v = latest.get(k)
+            if v in (None, "-", ""):
+                return 0.0
+            try:
+                return round(float(v), 2)
+            except (TypeError, ValueError):
+                return 0.0
+        data.revenue_yoy = _gy("OPERATE_INCOME_YOY")
+        data.net_profit_yoy = _gy("PARENT_NETPROFIT_YOY")
+        data.yoy_official = bool(data.revenue_yoy or data.net_profit_yoy)
+        print(f"  [数据层] 财报(小时助手financials): {len(revs)}期真实利润表 "
+              f"营收同比 {data.revenue_yoy}% / 净利同比 {data.net_profit_yoy}%")
 
 
 def load_all_data(code: str) -> StockRawData:
@@ -705,9 +875,11 @@ def load_all_data(code: str) -> StockRawData:
     fetch_realtime(raw)
     fetch_klines_and_ta(raw)
     fetch_financial_summary(raw)
+    fetch_financials_rev(raw)
     fetch_industry(raw)
     fetch_valuation_history(raw)
     fetch_macro(raw)
+    fetch_forecast(raw)
     return raw
 
 
@@ -903,6 +1075,38 @@ class ValuationAgent:
             if gdp >= 5:
                 macro_bull.append("GDP 增速较快，宏观需求有支撑")
 
+        # ---- 改进#14：机构一致预期（forecast：EPS 预测 / 目标价 / 评级分布） ----
+        fc = data.forecast or {}
+        fc_eps = fc.get("eps") or {}
+        fc_conc, fc_bull, fc_bear = [], [], []
+        fwd_pe = None
+        fwd_pe_next = None
+        if data.price > 0 and fc_eps.get("y2"):
+            fwd_pe = round(data.price / fc_eps["y2"], 1)
+            if fc_eps.get("y3"):
+                fwd_pe_next = round(data.price / fc_eps["y3"], 1)
+            fc_conc.append(
+                f"机构一致预期：{fc.get('org_num') or '-'}家机构，"
+                f"{fc_eps.get('year2')}{fc_eps.get('mark2')} EPS {fc_eps['y2']} → 一致预期PE {fwd_pe}x"
+                + (f"，{fc_eps.get('year3')}{fc_eps.get('mark3')} PE {fwd_pe_next}x" if fwd_pe_next else "")
+            )
+            if data.pe_ttm > 0 and fwd_pe < data.pe_ttm:
+                fc_bull.append(f"一致预期PE {fwd_pe}x 低于当前PE {data.pe_ttm:.1f}x，盈利增长有望消化估值")
+            elif data.pe_ttm > 0 and fwd_pe > data.pe_ttm * 1.2:
+                fc_bear.append(f"一致预期PE {fwd_pe}x 高于当前PE，隐含预测盈利下滑")
+        aim_min, aim_max = fc.get("aim_price_min"), fc.get("aim_price_max")
+        if data.price > 0 and aim_min and aim_max:
+            up_min = (aim_min / data.price - 1) * 100
+            up_max = (aim_max / data.price - 1) * 100
+            fc_conc.append(f"机构目标价 {aim_min}~{aim_max}（较现价 {up_min:+.1f}%~{up_max:+.1f}%）")
+            if up_min > 0:
+                fc_bull.append(f"机构目标价下限高于现价 {up_min:.1f}%，一致预期存在空间")
+            elif up_max < 0:
+                fc_bear.append("机构目标价上限低于现价，一致预期偏空")
+        buy_n, add_n = fc.get("rating_buy"), fc.get("rating_add")
+        if buy_n is not None:
+            fc_conc.append(f"评级分布：买入 {int(buy_n or 0)} 家 / 增持 {int(add_n or 0)} 家")
+
         conclusions = [pe_concl, pb_concl,
                        f"目标价区间：保守 {tgt_conservative} / 中性 {tgt_neutral} / 乐观 {tgt_optimistic}"]
         if data.pe_5y_pct > 0 or data.pb_5y_pct > 0:
@@ -914,6 +1118,7 @@ class ValuationAgent:
         if ind.get("peg"):
             conclusions.append(f"PEG {ind['peg']:.2f}（<1 通常隐含低估，仅供参考）")
         conclusions += macro_conc
+        conclusions += fc_conc
         bulls = []
         bears = []
         if pe_score >= 7: bulls.append(f"PE {pe:.1f}x 偏低/合理，估值安全边际充足")
@@ -931,6 +1136,8 @@ class ValuationAgent:
             bears.append("历史分位偏高，需警惕估值回归风险")
         bulls += macro_bull
         bears += macro_bear
+        bulls += fc_bull
+        bears += fc_bear
 
         extra = {
             "targets": {
@@ -951,6 +1158,15 @@ class ValuationAgent:
                 "zone": pct_zone,
                 "macro": data.macro,
                 "history_len": len(data.valuation_history),
+                "forecast": {
+                    "eps": fc_eps,
+                    "aim_price_range": [aim_min, aim_max],
+                    "rating_buy": buy_n,
+                    "rating_add": add_n,
+                    "org_num": fc.get("org_num"),
+                    "forward_pe": fwd_pe,
+                    "forward_pe_next": fwd_pe_next,
+                },
             },
         }
         out = AgentOutput(role=self.NAME, score=score, conclusions=conclusions,
@@ -974,12 +1190,18 @@ class EarningsAgent:
         bad = []
         conclusions = []
 
-        # 营收趋势
-        if len(data.revenue) >= 2:
+        # 营收趋势（改进#14：优先官方同比，缺失才用期间环比推算并如实标注）
+        rev_growth = None
+        if data.yoy_official:
+            rev_growth = data.revenue_yoy
+            rev_label = "营收同比（官方报表）"
+        elif len(data.revenue) >= 2:
             latest_rev = data.revenue[-1]
             prev_rev = data.revenue[-2] if data.revenue[-2] > 1e-9 else latest_rev
             rev_growth = (latest_rev - prev_rev) / prev_rev * 100 if prev_rev > 0 else 0
-            conclusions.append(f"营收同比 {rev_growth:+.1f}%（最新报告期）")
+            rev_label = "营收期间环比（推算，非官方同比）"
+        if rev_growth is not None:
+            conclusions.append(f"{rev_label} {rev_growth:+.1f}%")
             if rev_growth >= 15:
                 score += 2; good.append(f"营收强劲增长 +{rev_growth:.1f}%")
             elif rev_growth >= 0:
@@ -987,18 +1209,25 @@ class EarningsAgent:
             else:
                 score -= 1; bad.append(f"营收萎缩 {rev_growth:.1f}%")
 
-        # 净利润趋势
-        if len(data.net_profit) >= 2:
+        # 净利润趋势（同上：优先官方同比）
+        np_growth = None
+        if data.yoy_official:
+            np_growth = data.net_profit_yoy
+            np_label = "归母净利同比（官方报表）"
+        elif len(data.net_profit) >= 2:
             latest_np = data.net_profit[-1]
             prev_np = data.net_profit[-2] if abs(data.net_profit[-2]) > 1e-9 else latest_np
-            sign = prev_np / abs(prev_np) if abs(prev_np) > 1e-9 else 1
             np_growth = (latest_np - prev_np) / (abs(prev_np) + 1e-6) * 100
-            conclusions.append(f"归母净利同比 {np_growth:+.1f}%（最新报告期）")
-            if sign > 0 and np_growth >= 20:
+            np_label = "归母净利期间环比（推算，非官方同比）"
+        if np_growth is not None:
+            latest_np = data.net_profit[-1] if data.net_profit else 0.0
+            prev_np = data.net_profit[-2] if len(data.net_profit) >= 2 else latest_np
+            conclusions.append(f"{np_label} {np_growth:+.1f}%")
+            if np_growth >= 20:
                 score += 2; good.append(f"净利高速增长 +{np_growth:.1f}%")
-            elif sign > 0 and np_growth >= 0:
+            elif np_growth >= 0:
                 score += 1; good.append(f"净利稳健增长 +{np_growth:.1f}%")
-            elif sign < 0 and latest_np > 0:
+            elif prev_np <= 0 and latest_np > 0:
                 score += 1; good.append(f"成功扭亏（扭亏为盈 {latest_np:.2f}亿）")
             else:
                 score -= 2; bad.append(f"净利下滑 {np_growth:.1f}%")
@@ -1672,6 +1901,57 @@ def build_html_report(report: FinalReport, data: StockRawData) -> str:
     va_extra = {}
     if report.agent_outputs.get("估值分析师"):
         va_extra = report.agent_outputs["估值分析师"].extra.get("valuation") or {}
+
+    # ---- 机构一致预期子块（改进#14） ----
+    fc_extra = va_extra.get("forecast") or {}
+    fc_eps = fc_extra.get("eps") or {}
+    fc_rng = fc_extra.get("aim_price_range") or [None, None]
+    fwd_pe_txt = fc_extra.get("forward_pe")
+    fc_html = ""
+    if fc_eps.get("y2") or (fc_rng and fc_rng[0]):
+
+        def _yr_mark(n):
+            """year2 + mark2 → 2026E；缺失则退回占位文案"""
+            y = fc_eps.get(f"year{n}")
+            m = fc_eps.get(f"mark{n}")
+            if y:
+                return f"{y}{m or ''}"
+            return "下一年" if n > 1 else "本年"
+
+        fc_items = ""
+        if fwd_pe_txt:
+            fc_items += (f'<div class="trade-item"><div class="label">一致预期PE（{_yr_mark(2)}）</div>'
+                         f'<div class="value">{fwd_pe_txt}x</div></div>')
+        fwd_pe_next_txt = fc_extra.get("forward_pe_next")
+        if fwd_pe_next_txt:
+            fc_items += (f'<div class="trade-item"><div class="label">下一年PE（{_yr_mark(3)}）</div>'
+                         f'<div class="value">{fwd_pe_next_txt}x</div></div>')
+        if fc_rng[0] and fc_rng[1]:
+            fc_items += (f'<div class="trade-item"><div class="label">机构目标价</div>'
+                         f'<div class="value">{fc_rng[0]}~{fc_rng[1]}</div></div>')
+        if fc_extra.get("org_num"):
+            fc_items += (f'<div class="trade-item"><div class="label">覆盖机构数</div>'
+                         f'<div class="value">{int(fc_extra["org_num"])}</div></div>')
+        if fc_extra.get("rating_buy") is not None:
+            fc_items += (f'<div class="trade-item"><div class="label">评级分布</div>'
+                         f'<div class="value">买入 {int(fc_extra.get("rating_buy") or 0)} / '
+                         f'增持 {int(fc_extra.get("rating_add") or 0)}</div></div>')
+        eps_parts = []
+        for _n in (1, 2, 3, 4):
+            _v = fc_eps.get(f"y{_n}")
+            if _v:
+                eps_parts.append(f"{_yr_mark(_n)} {_v:.2f}")
+        fc_html = (
+            '<div class="section">'
+            '<div class="section-title">🎯 机构一致预期</div>'
+            f'<div class="trade-grid">{fc_items}</div>'
+            + (f'<div class="trade-note" style="margin-top:10px;">EPS 预测：{" · ".join(eps_parts)}</div>'
+               if eps_parts else "")
+            + '<div style="font-size:11px;color:#7a8090;margin-top:8px;">数据源：东方财富机构预测（经小时助手 forecast 适配器）。'
+              '一致预期是机构观点的统计汇总，不代表本工具判断，不构成投资建议。</div>'
+            '</div>'
+        )
+
     if va_extra.get("history_len", 0) >= 60:
         def _pct_bar(label, pct, cur, rng):
             if not (0 <= pct <= 100):
@@ -1706,7 +1986,8 @@ def build_html_report(report: FinalReport, data: StockRawData) -> str:
             inds += f'<div class="trade-item"><div class="label">{label}</div><div class="value">{val_cell}</div></div>'
         macro = va_extra.get("macro") or {}
         macro_grid = ""
-        for key, label in (("cpi", "CPI同比"), ("ppi", "PPI同比"), ("pmi", "制造业PMI"), ("gdp", "GDP同比")):
+        for key, label in (("cpi", "CPI同比"), ("ppi", "PPI同比"), ("pmi", "制造业PMI"),
+                           ("gdp", "GDP同比"), ("m2", "M2同比")):
             it = macro.get(key) or {}
             v = it.get("main")
             v_txt = f"{v}" if v is not None else "—"
@@ -1726,6 +2007,7 @@ def build_html_report(report: FinalReport, data: StockRawData) -> str:
             '数据源：东方财富数据中心公开接口。非交易时段或接口异常时相关项显示"数据暂缺"。</div>'
             '</div>'
         )
+    val_html = val_html + fc_html
 
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">

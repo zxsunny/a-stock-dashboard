@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>股票分析报告 · 贵州茅台(600519)</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:"Microsoft YaHei","Segoe UI",sans-serif; background:#0f1117; color:#d0d4dc; padding:20px; }
+  .container { max-width:900px; margin:0 auto; }
+  .header { text-align:center; padding:30px 20px; background:linear-gradient(135deg,#1a1d28,#2d3548); border-radius:12px; margin-bottom:20px; }
+  .header h1 { font-size:28px; color:#fff; margin-bottom:8px; }
+  .header .subtitle { font-size:14px; color:#7a8090; }
+  .rating-badge { display:inline-block; padding:8px 24px; border-radius:20px; font-size:20px; font-weight:bold;
+    color:#fff; background:#e67e22; margin-top:10px; }
+  .rating-score { font-size:14px; color:#a0a4b0; margin-top:6px; }
+  .disclaimer-banner { margin-top:12px; padding:10px 14px; border-radius:8px; font-size:13px; font-weight:bold;
+    background:#3a2f12; border:1px solid #f1c40f; color:#f7d97a; line-height:1.5; }
+  .trade-note { font-size:12px; color:#e8c8a0; margin-bottom:10px; }
+  .section { background:#1a1d28; border-radius:10px; padding:20px; margin-bottom:16px; }
+  .section-title { font-size:18px; font-weight:bold; color:#5dade2; margin-bottom:14px; border-left:3px solid #5dade2; padding-left:10px; }
+  /* 概览卡片 */
+  .overview-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+  .overview-item { background:#252a38; border-radius:8px; padding:14px; text-align:center; }
+  .overview-item .label { font-size:12px; color:#7a8090; margin-bottom:4px; }
+  .overview-item .value { font-size:18px; font-weight:bold; color:#e8e8e8; }
+  /* 雷达图 */
+  .radar-section { display:flex; align-items:center; gap:30px; }
+  .radar-svg { flex:0 0 320px; }
+  .radar-scores { flex:1; }
+  .radar-scores table { width:100%; border-collapse:collapse; }
+  .radar-scores th, .radar-scores td { padding:8px 10px; border-bottom:1px solid #2a2e3a; }
+  .radar-scores th { text-align:left; color:#7a8090; font-size:13px; }
+  .radar-scores td { text-align:center; font-weight:bold; font-size:16px; }
+  .grid-poly { fill:none; stroke:#2a2e3a; stroke-width:1; }
+  .axis-line { stroke:#2a2e3a; stroke-width:1; }
+  .data-poly { fill:rgba(93,173,226,0.2); stroke:#5dade2; stroke-width:2; }
+  .data-point { fill:#5dade2; r:4; }
+  .radar-label { font-size:12px; fill:#d0d4dc; font-weight:bold; }
+  .radar-value { font-size:11px; fill:#5dade2; }
+  /* 多空辩论 */
+  .debate-table { width:100%; border-collapse:collapse; }
+  .debate-table th { padding:10px; font-size:14px; }
+  .debate-table th.bull { color:#e74c3c; text-align:left; }
+  .debate-table th.bear { color:#2ecc71; text-align:left; }
+  .debate-table td { padding:10px; border-bottom:1px solid #2a2e3a; font-size:13px; line-height:1.5; }
+  .bull-cell { color:#e8a0a0; border-right:1px solid #2a2e3a !important; }
+  .bear-cell { color:#a0d8a0; }
+  /* 交易方案 */
+  .trade-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+  .trade-item { background:#252a38; border-radius:8px; padding:14px; }
+  .trade-item .label { font-size:12px; color:#7a8090; margin-bottom:4px; }
+  .trade-item .value { font-size:16px; font-weight:bold; color:#e8e8e8; }
+  /* Agent 卡片 */
+  .agent-card { background:#252a38; border-radius:8px; margin-bottom:12px; overflow:hidden; }
+  .agent-header { padding:12px 16px; font-weight:bold; font-size:15px; display:flex; align-items:center; gap:8px;
+    background:#1e2230; border-bottom:1px solid #2a2e3a; }
+  .agent-score { margin-left:auto; padding:2px 10px; border-radius:10px; font-size:12px; color:#fff; }
+  .agent-body { display:grid; grid-template-columns:1fr 1fr 1fr; gap:1px; background:#2a2e3a; }
+  .agent-col { background:#252a38; padding:12px; }
+  .col-title { font-size:12px; font-weight:bold; margin-bottom:6px; }
+  .col-title.bull { color:#e74c3c; }
+  .col-title.bear { color:#2ecc71; }
+  .agent-col ul { list-style:none; padding-left:0; }
+  .agent-col li { font-size:12px; line-height:1.6; margin-bottom:3px; }
+  .agent-col li.empty { color:#555; }
+  .score-bar { width:100%; height:6px; background:#2a2e3a; border-radius:3px; margin-top:4px; }
+  .score-fill { height:100%; border-radius:3px; }
+  /* 标签 */
+  .tags { display:flex; flex-wrap:wrap; gap:8px; }
+  .tag { background:#2d3548; color:#5dade2; padding:4px 12px; border-radius:12px; font-size:12px; }
+  /* 风险 */
+  .warnings ul { list-style:none; padding-left:0; }
+  .warnings li { font-size:13px; line-height:1.8; color:#e8c8a0; }
+  .footer { text-align:center; padding:20px; font-size:12px; color:#555; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- 标题 -->
+  <div class="header">
+    <h1>🧑‍💼 贵州茅台 (600519)</h1>
+    <div class="subtitle">5人 Agent 团队分析报告 · 2026-11-18 10:37:40</div>
+    <div class="rating-badge">LEAN BUY</div>
+    <div class="rating-score">综合评分 +4.00（-10 ~ +10）</div>
+    <div class="disclaimer-banner">⚠️ 本报告由 AI 自动生成，仅供研究学习参考，不构成任何投资建议。市场有风险，入市需谨慎。</div>
+  </div>
+
+  <!-- 概览 -->
+  <div class="section">
+    <div class="section-title">📊 股票概览</div>
+    <div class="overview-grid">
+      <div class="overview-item"><div class="label">最新价 / 涨跌幅</div><div class="value">1447.24 / -0.72%</div></div>
+      <div class="overview-item"><div class="label">总市值</div><div class="value">18091.7 亿</div></div>
+      <div class="overview-item"><div class="label">PE-TTM / PB</div><div class="value">21.1 / 6.67</div></div>
+      <div class="overview-item"><div class="label">换手率</div><div class="value">0.07%</div></div>
+    </div>
+  </div>
+
+  <!-- 五维雷达 -->
+  <div class="section">
+    <div class="section-title">🎯 五维评分雷达</div>
+    <div class="radar-section">
+      <div class="radar-svg">
+        <svg width="320" height="320" xmlns="http://www.w3.org/2000/svg">
+          <polygon points="150.0,130.0 169.0,143.8 161.8,166.2 138.2,166.2 131.0,143.8" class="grid-poly" /><polygon points="150.0,110.0 188.0,137.6 173.5,182.4 126.5,182.4 112.0,137.6" class="grid-poly" /><polygon points="150.0,90.0 207.1,131.5 185.3,198.5 114.7,198.5 92.9,131.5" class="grid-poly" /><polygon points="150.0,70.0 226.1,125.3 197.0,214.7 103.0,214.7 73.9,125.3" class="grid-poly" /><polygon points="150.0,50.0 245.1,119.1 208.8,230.9 91.2,230.9 54.9,119.1" class="grid-poly" />
+          <line x1="150" y1="150" x2="150.0" y2="50.0" class="axis-line" /><line x1="150" y1="150" x2="245.1" y2="119.1" class="axis-line" /><line x1="150" y1="150" x2="208.8" y2="230.9" class="axis-line" /><line x1="150" y1="150" x2="91.2" y2="230.9" class="axis-line" /><line x1="150" y1="150" x2="54.9" y2="119.1" class="axis-line" />
+          <polygon points="150.0,90.0 207.1,131.5 202.9,222.8 114.7,198.5 54.9,119.1" class="data-poly" />
+          <circle cx="150.0" cy="90.0" r="4" class="data-point" /><circle cx="207.1" cy="131.5" r="4" class="data-point" /><circle cx="202.9" cy="222.8" r="4" class="data-point" /><circle cx="114.7" cy="198.5" r="4" class="data-point" /><circle cx="54.9" cy="119.1" r="4" class="data-point" />
+          <text x="150.0" y="32.0" class="radar-label" text-anchor="middle">估值</text><text x="150.0" y="46.0" class="radar-value" text-anchor="middle">6/10</text><text x="266.0" y="116.3" class="radar-label" text-anchor="middle">财报</text><text x="266.0" y="130.3" class="radar-value" text-anchor="middle">6/10</text><text x="221.7" y="252.7" class="radar-label" text-anchor="middle">产业</text><text x="221.7" y="266.7" class="radar-value" text-anchor="middle">9/10</text><text x="78.3" y="252.7" class="radar-label" text-anchor="middle">技术</text><text x="78.3" y="266.7" class="radar-value" text-anchor="middle">6/10</text><text x="34.0" y="116.3" class="radar-label" text-anchor="middle">安全</text><text x="34.0" y="130.3" class="radar-value" text-anchor="middle">10/10</text>
+        </svg>
+      </div>
+      <div class="radar-scores">
+        <table>
+          <tr><th>维度</th><th>分数</th><th>图形</th></tr>
+          <tr><td>🔢 估值</td><td>6</td><td><div class="score-bar"><div class="score-fill" style="width:60%;background:#f39c12"></div></div></td></tr>
+          <tr><td>📊 财报</td><td>6</td><td><div class="score-bar"><div class="score-fill" style="width:60%;background:#f39c12"></div></div></td></tr>
+          <tr><td>🏭 产业</td><td>9</td><td><div class="score-bar"><div class="score-fill" style="width:90%;background:#e74c3c"></div></div></td></tr>
+          <tr><td>📈 技术</td><td>6</td><td><div class="score-bar"><div class="score-fill" style="width:60%;background:#f39c12"></div></div></td></tr>
+          <tr><td>🧨 安全</td><td>10</td><td><div class="score-bar"><div class="score-fill" style="width:100%;background:#e74c3c"></div></div></td></tr>
+        </table>
+      </div>
+      <div style="font-size:0.7rem;color:#7a8090;text-align:center;margin-top:6px;">所有维度分数越高越好（安全高分=风险低）</div>
+    </div>
+  </div>
+
+  <!-- 多空辩论 -->
+  <div class="section">
+    <div class="section-title">⚔️ 多空辩论 · 汇总</div>
+    <table class="debate-table">
+      <tr><th class="bull">🐂 多头依据 (8 条)</th><th class="bear">🐻 空头依据 (7 条)</th></tr>
+      <tr><td class='bull-cell'>CPI 温和（0~3%），通胀压力小、货币政策有空间</td><td class='bear-cell'>PE 21.1x 偏高，估值天花板低</td></tr><tr><td class='bull-cell'>PPI 转正，上游/工业盈利改善</td><td class='bear-cell'>PB 6.67x 估值溢价较高</td></tr><tr><td class='bull-cell'>机构目标价下限高于现价 7.5%，一致预期存在空间</td><td class='bear-cell'>PMI 低于 50 荣枯线，制造业景气收缩</td></tr><tr><td class='bull-cell'>营收正增长 +2.0%</td><td class='bear-cell'>净利下滑 -0.2%</td></tr><tr><td class='bull-cell'>ROE 31.7% 属优秀水平</td><td class='bear-cell'>制约因素：行业筑底</td></tr><tr><td class='bull-cell'>护城河深厚 10/10，行业龙头地位稳固</td><td class='bear-cell'>MACD 死叉，DIF=34.91 DEA=35.85</td></tr><tr><td class='bull-cell'>均线多头排列，趋势明确向上</td><td class='bear-cell'>60日位置 87%，接近阶段高点，性价比下降</td></tr><tr><td class='bull-cell'>站稳 MA60，中期结构偏强</td><td class='bear-cell'></td></tr>
+    </table>
+  </div>
+
+  <!-- 交易方案 -->
+  <div class="section">
+    <div class="section-title">💰 交易方案（演示参考）</div>
+    <div class="trade-note">⚠️ 以下入场价 / 目标价 / 止损 / 仓位均为演示学习用参考，不构成投资建议。</div>
+    <div class="trade-grid">
+      <div class="trade-item"><div class="label">入场价区间</div><div class="value">1247.94 ~ 1375.05 元</div></div>
+      <div class="trade-item"><div class="label">目标价（保守）</div><div class="value">1890.69 元</div></div>
+      <div class="trade-item"><div class="label">目标价（乐观）</div><div class="value">2170.86 元</div></div>
+      <div class="trade-item"><div class="label">止损价</div><div class="value" style="color:#e74c3c">1186.16 元</div></div>
+      <div class="trade-item"><div class="label">参考仓位（演示）</div><div class="value">15% ~ 25%</div></div>
+      <div class="trade-item"><div class="label">当前价</div><div class="value">1447.24 元</div></div>
+    </div>
+  </div>
+
+  <div class="section"><div class="section-title">📐 估值合理性（近5年历史分位 + 宏观环境）</div><div style="margin-bottom:12px;"><div style="margin-bottom:8px;"><div style="font-size:12px;color:#a0a4b0;">PE-TTM 当前 <b>21.1</b> · 近5年区间 17.7~55.0 · <b style="color:#f39c12">近5年 34% 分位</b></div><div style="height:8px;background:#2a2e3a;border-radius:4px;overflow:hidden;"><div style="width:33.5%;height:100%;background:#f39c12;border-radius:4px;"></div></div></div><div style="margin-bottom:8px;"><div style="font-size:12px;color:#a0a4b0;">PB 当前 <b>6.7</b> · 近5年区间 5.4~15.8 · <b style="color:#2ecc71">近5年 12% 分位</b></div><div style="height:8px;background:#2a2e3a;border-radius:4px;overflow:hidden;"><div style="width:11.6%;height:100%;background:#2ecc71;border-radius:4px;"></div></div></div></div><div class="trade-grid"><div class="trade-item"><div class="label">PE-TTM</div><div class="value">21.05<br><span style='font-size:11px;color:#7a8090'>(5y 17.7~55.0)</span></div></div><div class="trade-item"><div class="label">PB</div><div class="value">6.67<br><span style='font-size:11px;color:#7a8090'>(5y 5.4~15.8)</span></div></div><div class="trade-item"><div class="label">PS-TTM</div><div class="value">10.45</div></div><div class="trade-item"><div class="label">PEG</div><div class="value">数据暂缺</div></div><div class="trade-item"><div class="label">市现率(PCF)</div><div class="value">16.97</div></div></div><div class="trade-note" style="margin-top:12px;">宏观环境（演示参考，不构成投资建议）：</div><div class="trade-grid"><div class="trade-item"><div class="label">CPI同比<br><span style="font-size:10px;color:#7a8090">2026-10-01</span></div><div class="value">0.7</div></div><div class="trade-item"><div class="label">PPI同比<br><span style="font-size:10px;color:#7a8090">2026-10-01</span></div><div class="value">5.7</div></div><div class="trade-item"><div class="label">制造业PMI<br><span style="font-size:10px;color:#7a8090">2026-10-01</span></div><div class="value">49.3</div></div><div class="trade-item"><div class="label">GDP同比<br><span style="font-size:10px;color:#7a8090">2026-09-01</span></div><div class="value">4.6</div></div><div class="trade-item"><div class="label">M2同比<br><span style="font-size:10px;color:#7a8090">2026年10月份</span></div><div class="value">7.1</div></div></div><div style="font-size:11px;color:#7a8090;margin-top:8px;">百分位基于近5年交易日序列；数据源：东方财富数据中心公开接口。非交易时段或接口异常时相关项显示"数据暂缺"。</div></div><div class="section"><div class="section-title">🎯 机构一致预期</div><div class="trade-grid"><div class="trade-item"><div class="label">一致预期PE（2026E）</div><div class="value">21.7x</div></div><div class="trade-item"><div class="label">下一年PE（2027E）</div><div class="value">20.5x</div></div><div class="trade-item"><div class="label">机构目标价</div><div class="value">1556.0~2030.0</div></div><div class="trade-item"><div class="label">覆盖机构数</div><div class="value">43</div></div><div class="trade-item"><div class="label">评级分布</div><div class="value">买入 34 / 增持 9</div></div></div><div class="trade-note" style="margin-top:10px;">EPS 预测：2025A 65.85 · 2026E 66.81 · 2027E 70.73 · 2028E 74.76</div><div style="font-size:11px;color:#7a8090;margin-top:8px;">数据源：东方财富机构预测（经小时助手 forecast 适配器）。一致预期是机构观点的统计汇总，不代表本工具判断，不构成投资建议。</div></div>
+
+  <!-- Agent 详情 -->
+  <div class="section">
+    <div class="section-title">👥 5 人 Agent 团队详情</div>
+    
+        <div class="agent-card">
+          <div class="agent-header"><span class="agent-emoji">🔢</span> 估值分析师
+            <span class="agent-score" style="background:#95a5a6">6/10</span>
+          </div>
+          <div class="agent-body">
+            <div class="agent-col"><div class="col-title">📌 核心结论</div><ul><li>PE 21.1x 合理区间</li><li>PB 6.67x 偏高</li><li>目标价区间：保守 1375.05 / 中性 1890.69 / 乐观 2170.86</li><li>历史估值（近5年交易日）：PE 34%位 / PB 12%位 → 估值合理中枢</li><li>PS-TTM 10.4x（近5年最新交易日）</li><li>宏观：CPI同比 0.7%（2026-10-01）</li><li>PPI同比 5.7%（2026-10-01）</li><li>制造业PMI 49.3（2026-10-01）</li><li>GDP同比 4.6%（2026-09-01）</li><li>机构一致预期：43.0家机构，2026E EPS 66.81 → 一致预期PE 21.7x，2027E PE 20.5x</li><li>机构目标价 1556.0~2030.0（较现价 +7.5%~+40.3%）</li><li>评级分布：买入 34 家 / 增持 9 家</li></ul></div>
+            <div class="agent-col"><div class="col-title bull">🐂 多头论据</div><ul><li>CPI 温和（0~3%），通胀压力小、货币政策有空间</li><li>PPI 转正，上游/工业盈利改善</li><li>机构目标价下限高于现价 7.5%，一致预期存在空间</li></ul></div>
+            <div class="agent-col"><div class="col-title bear">🐻 空头论据</div><ul><li>PE 21.1x 偏高，估值天花板低</li><li>PB 6.67x 估值溢价较高</li><li>PMI 低于 50 荣枯线，制造业景气收缩</li></ul></div>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-header"><span class="agent-emoji">📊</span> 财报分析师
+            <span class="agent-score" style="background:#95a5a6">6/10</span>
+          </div>
+          <div class="agent-body">
+            <div class="agent-col"><div class="col-title">📌 核心结论</div><ul><li>营收同比（官方报表） +2.0%</li><li>归母净利同比（官方报表） -0.2%</li><li>ROE = 31.7%</li></ul></div>
+            <div class="agent-col"><div class="col-title bull">🐂 多头论据</div><ul><li>营收正增长 +2.0%</li><li>ROE 31.7% 属优秀水平</li></ul></div>
+            <div class="agent-col"><div class="col-title bear">🐻 空头论据</div><ul><li>净利下滑 -0.2%</li></ul></div>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-header"><span class="agent-emoji">🏭</span> 产业策略师
+            <span class="agent-score" style="background:#e74c3c">9/10</span>
+          </div>
+          <div class="agent-body">
+            <div class="agent-col"><div class="col-title">📌 核心结论</div><ul><li>所属赛道：白酒Ⅱ</li><li>护城河（Porter五力综合）：⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ (10/10)</li><li>景气周期位置：🌟🌟🌟🌟🌟🌟🌟··· (7/10)</li><li>主线催化：白酒提价, 行业筑底, 消费复苏</li></ul></div>
+            <div class="agent-col"><div class="col-title bull">🐂 多头论据</div><ul><li>护城河深厚 10/10，行业龙头地位稳固</li></ul></div>
+            <div class="agent-col"><div class="col-title bear">🐻 空头论据</div><ul><li>制约因素：行业筑底</li></ul></div>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-header"><span class="agent-emoji">📈</span> 市场信号官
+            <span class="agent-score" style="background:#95a5a6">6/10</span>
+          </div>
+          <div class="agent-body">
+            <div class="agent-col"><div class="col-title">📌 核心结论</div><ul><li>RSI(14) = 66.5</li><li>MACD柱=-1.89</li><li>KDJ(K/D/J) = 72/67/84</li><li>60日位置 87%（60日低 1235.58 / 高 1480.00）</li><li>换手率 0.07%</li><li>短线支撑 ~1235.58   压力位 ~1480.0</li></ul></div>
+            <div class="agent-col"><div class="col-title bull">🐂 多头论据</div><ul><li>均线多头排列，趋势明确向上</li><li>站稳 MA60，中期结构偏强</li></ul></div>
+            <div class="agent-col"><div class="col-title bear">🐻 空头论据</div><ul><li>MACD 死叉，DIF=34.91 DEA=35.85</li><li>60日位置 87%，接近阶段高点，性价比下降</li></ul></div>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-header"><span class="agent-emoji">🧨</span> 逆向投资人
+            <span class="agent-score" style="background:#e74c3c">10/10</span>
+          </div>
+          <div class="agent-body">
+            <div class="agent-col"><div class="col-title">📌 核心结论</div><ul><li>✅ 未发现显著的结构性风险（风险权重 0/10）</li><li>🦢 永远存在的黑天鹅（不可量化）：</li><li>   • 宏观：经济下行超预期 → 居民消费/企业资本开支收缩</li><li>   • 政策：行业监管政策突变（平台/医药/教育式整治）</li><li>   • 事件：大股东减持 / 定增解禁 / 管理层变动</li></ul></div>
+            <div class="agent-col"><div class="col-title bull">🐂 多头论据</div><ul><li class='empty'>—</li></ul></div>
+            <div class="agent-col"><div class="col-title bear">🐻 空头论据</div><ul><li class='empty'>—</li></ul></div>
+          </div>
+        </div>
+  </div>
+
+  <!-- 催化 / 风险 -->
+  <div class="section">
+    <div class="section-title">🚀 关键催化 / 主线</div>
+    <div class="tags"><span class='tag'>白酒提价</span><span class='tag'>行业筑底</span><span class='tag'>消费复苏</span><span class='tag'>下一份财报窗口：2026-09-30</span><span class='tag'>技术信号：均线多头（MA5>MA10>MA20，短中期趋势向上）</span></div>
+  </div>
+  <div class="section warnings">
+    <div class="section-title">⚠️ 风险预警</div>
+    <ul><li>⚠️ 外部：地缘冲突升级、汇率大幅波动、海外制裁</li><li>⚠️ 模型：历史表现不代表未来，任何技术指标都可能失效</li></ul>
+  </div>
+
+  <div class="footer">
+    本报告由 5 人 Agent 团队自动生成 · 仅供研究参考，不构成投资建议 · 市场有风险，入市需谨慎
+  </div>
+</div>
+</body>
+</html>
