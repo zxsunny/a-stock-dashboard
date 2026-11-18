@@ -537,9 +537,9 @@
     const pb = stock.pb;
 
     if (pe < 0 || !pe) {
-      return { type: 'hold', text: '当前市盈率为负或数据缺失，公司可能处于亏损状态。历史估值走势及百分位需要真实历史数据支撑。', badge: '亏损/缺数据' };
+      return { type: 'hold', text: '当前市盈率为负或数据缺失，公司可能处于亏损状态。历史估值走势见下方图表。', badge: '亏损/缺数据' };
     }
-    return { type: 'hold', text: '当前市盈率 ' + formatNumber(pe) + '，市净率 ' + formatNumber(pb) + '。历史估值走势及百分位需要真实历史数据支撑，当前仅展示实时估值指标。', badge: '当前估值' };
+    return { type: 'hold', text: '当前市盈率 ' + formatNumber(pe) + '，市净率 ' + formatNumber(pb) + '。历史估值走势（近5年 PE/PB）与历史分位见下方图表。', badge: '当前估值' };
   }
 
   // ==================== 渲染函数 ====================
@@ -672,7 +672,7 @@
       '<div class="advice-text">' + advice.text + '</div>' +
     '</div>';
 
-    html += '<div style="margin-top:1.5rem;"><div class="panel-header" style="margin-bottom:0.8rem;"><div class="panel-title">&#128200; 估值历史走势</div></div><div class="chart-note">历史估值走势需要真实历史数据支撑，当前仅展示实时估值指标。</div></div>';
+    html += '<div style="margin-top:1.5rem;"><div class="panel-header" style="margin-bottom:0.8rem;"><div class="panel-title">&#128200; 估值历史走势（近5年 PE/PB）</div></div><div id="valuationHistoryChart" class="chart-container" style="min-height:240px;"><div class="chart-note">加载中...</div></div></div>';
 
     html += '<div style="margin-top:1.5rem;"><div class="panel-header" style="margin-bottom:0.8rem;"><div class="panel-title">&#128240; 相关资讯</div><span class="badge badge-info">实时</span></div><div class="news-list">' +
       (news || []).map(n => '<div class="news-item"><div class="news-time">' + n.time + '</div><div class="news-content"><div class="news-title">' + n.title + '</div><div class="news-source">' + n.source + '</div></div></div>').join('') +
@@ -684,6 +684,7 @@
 
     setTimeout(() => {
       try { renderFundFlowChart(moneyFlow); } catch(e) { console.warn('资金流向图表渲染失败:', e); }
+      try { renderValuationHistoryChart(stockCode); } catch(e) { console.warn('估值历史图表渲染失败:', e); }
     }, 50);
     } catch(e) {
       console.error('股票面板渲染失败:', e);
@@ -691,6 +692,53 @@
       if (panel) {
         panel.innerHTML = '<div class="empty-state"><div class="empty-state-icon">&#9888;</div><h3>数据处理出错</h3><p>无法显示股票信息，请重试或搜索其他股票。<br><small style="color:#888;">错误：' + e.message + '</small></p></div>';
       }
+    }
+  }
+
+  // 估值历史走势图（近5年 PE/PB + 当前分位，改进#12；数据源：后端 /api/valuation_history）
+  async function renderValuationHistoryChart(code) {
+    const el = document.getElementById('valuationHistoryChart');
+    if (!el || typeof echarts === 'undefined') return;
+    if (!code) { el.innerHTML = '<div class="chart-note">暂无数据</div>'; return; }
+    let data = null;
+    try {
+      const resp = await fetch('/api/valuation_history?code=' + encodeURIComponent(code), { cache: 'no-store' });
+      data = await resp.json();
+    } catch (e) { /* 下方统一降级提示 */ }
+    if (!data || !data.ok || !data.series || !data.series.length) {
+      el.innerHTML = '<div class="chart-note">' + ((data && data.error) || '估值历史数据暂不可用（请通过本地服务器 http://localhost:8888 访问）') + '</div>';
+      return;
+    }
+    const s = data.series;
+    // 降采样：点数过多时每 n 个取一个，保证渲染流畅
+    const step = Math.max(1, Math.floor(s.length / 500));
+    const ds = s.filter(function(_, i) { return i % step === 0; });
+    el.innerHTML = '';  // 清掉"加载中..."占位，避免残留
+    const chart = echarts.init(el, null, { renderer: 'svg' });
+    chart.setOption({
+      backgroundColor: 'transparent',
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['PE-TTM', 'PB'], textStyle: { color: '#a0a4b0' }, top: 0 },
+      grid: { left: 46, right: 14, top: 28, bottom: 22 },
+      xAxis: { type: 'category', data: ds.map(x => x.date), axisLabel: { color: '#7a8090', fontSize: 10 } },
+      yAxis: [
+        { type: 'value', name: 'PE', axisLabel: { color: '#7a8090' }, splitLine: { lineStyle: { color: '#2a2e3a' } } },
+        { type: 'value', name: 'PB', axisLabel: { color: '#7a8090' }, splitLine: { show: false } }
+      ],
+      series: [
+        { name: 'PE-TTM', type: 'line', data: ds.map(x => x.pe > 0 ? +x.pe.toFixed(2) : null), smooth: true, showSymbol: false, lineStyle: { width: 1.5, color: '#e74c3c' }, itemStyle: { color: '#e74c3c' } },
+        { name: 'PB', type: 'line', yAxisIndex: 1, data: ds.map(x => x.pb > 0 ? +x.pb.toFixed(2) : null), smooth: true, showSymbol: false, lineStyle: { width: 1.5, color: '#5dade2' }, itemStyle: { color: '#5dade2' } }
+      ]
+    });
+    // 当前分位说明（追加在图表下方）
+    if (data.pe_5y_pct != null && data.pe_5y_pct > 0) {
+      const info = document.createElement('div');
+      info.className = 'chart-note';
+      const rng = (data.pe_5y_range && data.pe_5y_range[0] > 0)
+        ? (' · 区间 ' + data.pe_5y_range[0].toFixed(1) + '~' + data.pe_5y_range[1].toFixed(1))
+        : '';
+      info.innerHTML = 'PE 当前处于近5年 <b>' + data.pe_5y_pct + '%</b> 分位' + rng + '（演示参考，不构成投资建议）';
+      el.appendChild(info);
     }
   }
 

@@ -1463,6 +1463,7 @@
         '<div class="ai-metric-row"><span class="ai-metric-label">今日最高</span><span class="ai-metric-value">' + fmt(m.high52, ' 元') + '</span></div>' +
         '<div class="ai-metric-row"><span class="ai-metric-label">今日最低</span><span class="ai-metric-value">' + fmt(m.low52, ' 元') + '</span></div>' +
         '</div>';
+      html += '<div id="valHistoryExtra"></div>';
 
       html += '<div style="font-size:0.7rem;color:var(--muted);margin-top:0.8rem;line-height:1.4;padding-top:0.5rem;border-top:1px dashed var(--rule);">⚠️ 提示：本判断基于当前 PE/PB 等实时指标，结合 A 股市场大致估值区间给出，仅供参考，不构成投资建议。</div>';
     } else {
@@ -1596,6 +1597,11 @@
 
     document.getElementById('newsPanelContent').innerHTML = html;
 
+    // 异步补充估值历史（近5年 PE/PB 分位，改进#12）
+    if (stock.code) {
+      renderValHistoryExtra(stock.code);
+    }
+
     // 渲染独立新闻栏（含新闻和机构预测）
     renderNewsSection(stock, detail.news || [], detail.forecasts || []);
 
@@ -1606,6 +1612,30 @@
 
     // 异步加载 5 人 Agent 报告 JSON
     fetchAgentReport(stock.code);
+  }
+
+  // 估值历史补充（近5年 PE/PB 分位，改进#12；数据源：后端 /api/valuation_history）
+  async function renderValHistoryExtra(code) {
+    const el = document.getElementById('valHistoryExtra');
+    if (!el || !code) return;
+    let data = null;
+    try {
+      const resp = await fetch('/api/valuation_history?code=' + encodeURIComponent(code), { cache: 'no-store' });
+      data = await resp.json();
+    } catch (e) { return; } // file:// 或非服务器访问时静默隐藏
+    if (!data || !data.ok || !data.series || !data.series.length) return;
+    const lines = [];
+    if (data.pe_5y_pct != null && data.pe_5y_pct > 0) {
+      var rng = (data.pe_5y_range && data.pe_5y_range[0] > 0)
+        ? '（区间 ' + data.pe_5y_range[0].toFixed(1) + '~' + data.pe_5y_range[1].toFixed(1) + '）'
+        : '';
+      lines.push('PE-TTM 近5年分位 <b>' + data.pe_5y_pct + '%</b>' + rng);
+    }
+    if (data.pb_5y_pct != null && data.pb_5y_pct > 0) {
+      lines.push('PB 近5年分位 <b>' + data.pb_5y_pct + '%</b>');
+    }
+    if (!lines.length) return;
+    el.innerHTML = '<div style="font-size:0.7rem;color:var(--muted);line-height:1.6;margin-top:0.6rem;padding-top:0.5rem;border-top:1px dashed var(--rule);">📈 ' + lines.join(' · ') + '（演示参考，不构成投资建议）</div>';
   }
 
   // 渲染独立新闻栏（含新闻和机构预测）
