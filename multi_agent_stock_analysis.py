@@ -19,6 +19,7 @@ import json
 import sys
 import time
 import datetime
+import statistics
 import urllib.request
 import urllib.parse
 from typing import Dict, List, Any, Tuple
@@ -157,6 +158,18 @@ class StockRawData:
     # 行业 / 概念（东财 push2 f127 / f128，供产业策略师动态取数）
     industry: str = ""
     concept: str = ""
+    # 行业估值对比（同行业成分股 PE/PB 均值/中位/四分位，改进#15）
+    industry_pe_mean: float = 0.0
+    industry_pe_median: float = 0.0
+    industry_pe_p25: float = 0.0
+    industry_pe_p75: float = 0.0
+    industry_pb_mean: float = 0.0
+    industry_pb_median: float = 0.0
+    industry_pb_p25: float = 0.0
+    industry_pb_p75: float = 0.0
+    industry_sample_n: int = 0    # 同行业 A 股成分股总数（已剔除 B 股）
+    industry_pe_n: int = 0        # PE 有效样本数（已剔除负值/缺失）
+    industry_pb_n: int = 0        # PB 有效样本数（已剔除负值/缺失）
     # 估值历史（近 5 年序列与百分位，改进#12）
     valuation_history: List[dict] = field(default_factory=list)  # [{date,pe,pb,ps,peg,pcf,close}]
     pe_5y_pct: float = 0.0        # 当前 PE 在近 5 年交易日序列的百分位
@@ -577,20 +590,175 @@ def fetch_industry(data: StockRawData):
 
 
 def _fetch_em_data_utf8(url: str) -> dict:
-    """拉取东财 datacenter JSONP 并按 UTF-8 硬解码（数字字段可读、中文不乱码，改进#12）。
+    """拉取东财 push2 / datacenter JSON(P) 并按 UTF-8 硬解码（数字字段可读、中文不乱码）。
 
-    ⚠ 东财 datacenter 接口经 apparent_encoding 常误判为 ptcp154 等导致中文乱码，
-    因此直接按 UTF-8 解码 JSONP 内容。
+    ⚠ 东财接口经 apparent_encoding 常误判为 ptcp154 等导致中文乱码，因此直接按
+    UTF-8 解码；同时兼容「纯 JSON」与「JSONP（cb=cb 包裹）」两种返回。
     """
     try:
         raw = _session().get(url, headers=HEADERS_EM, timeout=10).content
-        txt = raw.decode("utf-8", errors="ignore")
+        txt = raw.decode("utf-8", errors="ignore").strip()
         start = txt.find("(")
         end = txt.rfind(")")
-        return json.loads(txt[start + 1:end]) if start != -1 and end != -1 else {}
+        if start != -1 and end != -1 and end > start:
+            txt = txt[start + 1:end]
+        return json.loads(txt) if txt else {}
     except Exception as e:
         print(f"  [数据层] EM UTF8 接口失败 {url[:60]}...: {e}")
         return {}
+
+
+def _em_diff_rows(obj: Any) -> List[dict]:
+    """统一取出东财 clist 返回的 diff 列表（兼容 list / dict 两种形态）。"""
+    diff = ((obj or {}).get("data") or {}).get("diff") or []
+    if isinstance(diff, dict):
+        return list(diff.values())
+    return diff if isinstance(diff, list) else []
+
+
+_INDUSTRY_BOARD_CACHE: Dict[str, str] = {}
+
+
+def _norm_industry_name(name: str) -> str:
+    """行业名归一化：去掉 Ⅱ/Ⅲ/II/III 等层级后缀，便于「白酒Ⅱ ↔ 白酒」回退匹配。"""
+    s = (name or "").strip()
+    changed = True
+    while changed and s:
+        changed = False
+        for suf in ("Ⅱ", "Ⅲ", "II", "III"):
+            if s.endswith(suf):
+                s = s[:-len(suf)].strip()
+                changed = True
+    return s
+
+
+def _pick_industry_board(industry: str) -> str:
+    """行业名 -> 东财行业板块代码（如 白酒Ⅱ -> BK1277）。
+
+    ⚠ 板块列表接口单页最多返回 100 条（当前共约 496 个），必须翻页。
+    匹配顺序：精确同名 -> 去后缀同名 -> 归一化模糊；模块级缓存避免重复翻页。
+    """
+    name = (industry or "").strip()
+    key = _norm_industry_name(name)
+    if not key:
+        return ""
+    if key in _INDUSTRY_BOARD_CACHE:
+        return _INDUSTRY_BOARD_CACHE[key]
+    candidates: Dict[str, str] = {}
+    for pn in range(1, 7):
+        url = (f"https://push2.eastmoney.com/api/qt/clist/get?pn={pn}&pz=100&po=1&np=1"
+               f"&fltt=2&invt=2&fid=f3&fs=m:90+t:2&fields=f12,f14")
+        obj = _fetch_em_data_utf8(url)
+        rows = _em_diff_rows(obj)
+        if not rows:
+            break
+        for r in rows:
+            nm = str(r.get("f14") or "").strip()
+            bk = str(r.get("f12") or "").strip()
+            if nm and bk:
+                candidates[nm] = bk
+        total = ((obj or {}).get("data") or {}).get("total") or 0
+        if total and pn * 100 >= total:
+            break
+    bk_code = candidates.get(name, "")
+    if not bk_code:
+        bk_code = candidates.get(key, "")
+    if not bk_code:
+        for nm, bk in candidates.items():
+            if _norm_industry_name(nm) == key:
+                bk_code = bk
+                break
+    if bk_code:
+        _INDUSTRY_BOARD_CACHE[key] = bk_code
+    return bk_code
+
+
+def _quartile_stats(values: List[float]) -> Tuple[float, float, float, float]:
+    """返回 (均值, P25, 中位数, P75)；样本不足时安全降级。"""
+    vals = sorted(v for v in values if v > 0)
+    if not vals:
+        return (0.0, 0.0, 0.0, 0.0)
+    mean = sum(vals) / len(vals)
+    med = statistics.median(vals)
+    if len(vals) < 2:
+        return (mean, med, med, med)
+    try:
+        q = statistics.quantiles(vals, n=4, method="inclusive")  # [P25, P50, P75]
+        return (mean, q[0], med, q[2])
+    except (statistics.StatisticsError, ValueError):
+        return (mean, med, med, med)
+
+
+def fetch_industry_valuation(data: StockRawData):
+    """拉取同行业成分股 PE/PB，计算均值与中位/四分位，供估值对比（改进#15）。
+
+    - 行业名来自 fetch_industry 的 f127；先匹配东财行业板块代码，再拉成分股；
+    - 成分股取 f9(动态PE) / f23(市净率)，剔除 B 股（900/200 开头）与负值/缺失；
+    - 无行业、匹配失败或接口异常时静默降级（字段保持 0），不编造。
+    """
+    try:
+        if not data.industry:
+            print("  [数据层] 行业估值：缺少行业名，跳过")
+            return
+        board = _pick_industry_board(data.industry)
+        if not board:
+            print(f"  [数据层] 行业估值：未匹配到板块（{data.industry}），跳过")
+            return
+        rows: List[dict] = []
+        for pn in range(1, 6):
+            url = (f"https://push2.eastmoney.com/api/qt/clist/get?pn={pn}&pz=100&po=1&np=1"
+                   f"&fltt=2&invt=2&fid=f3&fs=b:{board}&fields=f12,f14,f9,f23")
+            obj = _fetch_em_data_utf8(url)
+            chunk = _em_diff_rows(obj)
+            if not chunk:
+                break
+            rows.extend(chunk)
+            total = ((obj or {}).get("data") or {}).get("total") or 0
+            if total and len(rows) >= total:
+                break
+        if not rows:
+            print(f"  [数据层] 行业估值：板块 {board} 无成分股数据，跳过")
+            return
+
+        def _num(v: Any) -> float:
+            if v in (None, "-", ""):
+                return 0.0
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return 0.0
+
+        pes: List[float] = []
+        pbs: List[float] = []
+        n_stock = 0
+        for r in rows:
+            code = str(r.get("f12") or "").strip()
+            if not code.isdigit() or len(code) != 6:
+                continue
+            if code.startswith(("900", "200")):  # 剔除 B 股
+                continue
+            n_stock += 1
+            pe = _num(r.get("f9"))
+            pb = _num(r.get("f23"))
+            if pe > 0:
+                pes.append(pe)
+            if pb > 0:
+                pbs.append(pb)
+
+        if pes:
+            (data.industry_pe_mean, data.industry_pe_p25,
+             data.industry_pe_median, data.industry_pe_p75) = _quartile_stats(pes)
+        if pbs:
+            (data.industry_pb_mean, data.industry_pb_p25,
+             data.industry_pb_median, data.industry_pb_p75) = _quartile_stats(pbs)
+        data.industry_sample_n = n_stock
+        data.industry_pe_n = len(pes)
+        data.industry_pb_n = len(pbs)
+        print(f"  [数据层] 行业估值({data.industry}/{board}): 成分 {n_stock} 只  "
+              f"PE 中位 {data.industry_pe_median:.1f}x（四分位 {data.industry_pe_p25:.1f}~{data.industry_pe_p75:.1f}，n={len(pes)}）  "
+              f"PB 中位 {data.industry_pb_median:.2f}x（四分位 {data.industry_pb_p25:.2f}~{data.industry_pb_p75:.2f}，n={len(pbs)}）")
+    except Exception as e:
+        print(f"  [数据层] 行业估值异常（已降级）: {e}")
 
 
 def fetch_valuation_history(data: StockRawData):
@@ -877,6 +1045,7 @@ def load_all_data(code: str) -> StockRawData:
     fetch_financial_summary(raw)
     fetch_financials_rev(raw)
     fetch_industry(raw)
+    fetch_industry_valuation(raw)
     fetch_valuation_history(raw)
     fetch_macro(raw)
     fetch_forecast(raw)
@@ -1041,6 +1210,47 @@ class ValuationAgent:
             ind["peg"] = round(last["peg"], 2) if last.get("peg", 0) and last["peg"] > 0 else None
             ind["pcf"] = round(last["pcf"], 2) if last.get("pcf", 0) > 0 else None
 
+        # ---- 改进#15：同行业估值对比（行业成分股均值/中位/四分位，来自东财行业板块） ----
+        indu_conc: List[str] = []
+        indu_bull: List[str] = []
+        indu_bear: List[str] = []
+        if data.industry_pe_median > 0:
+            base = (f"行业PE（{data.industry}）：中位 {data.industry_pe_median:.1f}x"
+                    f"（四分位 {data.industry_pe_p25:.1f}~{data.industry_pe_p75:.1f}x，"
+                    f"均值 {data.industry_pe_mean:.1f}x，样本 {data.industry_pe_n}/{data.industry_sample_n} 只）")
+            if pe > 0:
+                if pe < data.industry_pe_p25:
+                    zone_txt = "低于行业下四分位，相对低估"
+                    indu_bull.append(f"PE {pe:.1f}x 低于行业中位 {data.industry_pe_median:.1f}x"
+                                     f"（{data.industry}，样本 {data.industry_pe_n} 只）")
+                elif pe > data.industry_pe_p75:
+                    zone_txt = "高于行业上四分位，相对高估"
+                    indu_bear.append(f"PE {pe:.1f}x 高于行业中位 {data.industry_pe_median:.1f}x"
+                                     f"（{data.industry}，样本 {data.industry_pe_n} 只）")
+                else:
+                    zone_txt = "处于行业中枢区间"
+                indu_conc.append(f"{base} → 个股 {pe:.1f}x {zone_txt}")
+            else:
+                indu_conc.append(f"{base} → 个股 PE 为负/缺失，不参与对比")
+        if data.industry_pb_median > 0:
+            base = (f"行业PB（{data.industry}）：中位 {data.industry_pb_median:.2f}x"
+                    f"（四分位 {data.industry_pb_p25:.2f}~{data.industry_pb_p75:.2f}x，"
+                    f"均值 {data.industry_pb_mean:.2f}x，样本 {data.industry_pb_n}/{data.industry_sample_n} 只）")
+            if pb > 0:
+                if pb < data.industry_pb_p25:
+                    pb_zone_txt = "低于行业下四分位，相对低估"
+                    indu_bull.append(f"PB {pb:.2f}x 低于行业中位 {data.industry_pb_median:.2f}x"
+                                     f"（{data.industry}，样本 {data.industry_pb_n} 只）")
+                elif pb > data.industry_pb_p75:
+                    pb_zone_txt = "高于行业上四分位，相对高估"
+                    indu_bear.append(f"PB {pb:.2f}x 高于行业中位 {data.industry_pb_median:.2f}x"
+                                     f"（{data.industry}，样本 {data.industry_pb_n} 只）")
+                else:
+                    pb_zone_txt = "处于行业中枢区间"
+                indu_conc.append(f"{base} → 个股 {pb:.2f}x {pb_zone_txt}")
+            else:
+                indu_conc.append(f"{base} → 个股 PB 缺失，不参与对比")
+
         # ---- 改进#12：宏观经济解读（仅陈述数据与一般逻辑，不构成投资建议） ----
         m = data.macro or {}
         macro_conc = []
@@ -1117,6 +1327,7 @@ class ValuationAgent:
             conclusions.append(f"PS-TTM {ind['ps']:.1f}x（近5年最新交易日）")
         if ind.get("peg"):
             conclusions.append(f"PEG {ind['peg']:.2f}（<1 通常隐含低估，仅供参考）")
+        conclusions += indu_conc
         conclusions += macro_conc
         conclusions += fc_conc
         bulls = []
@@ -1134,6 +1345,8 @@ class ValuationAgent:
             bulls.append("历史分位明显偏低，中长期估值修复空间较大")
         elif pct_zone == "偏高":
             bears.append("历史分位偏高，需警惕估值回归风险")
+        bulls += indu_bull
+        bears += indu_bear
         bulls += macro_bull
         bears += macro_bear
         bulls += fc_bull
@@ -1156,6 +1369,20 @@ class ValuationAgent:
                 "peg": ind.get("peg"),
                 "pcf": ind.get("pcf"),
                 "zone": pct_zone,
+                "industry": {
+                    "name": data.industry,
+                    "pe_mean": data.industry_pe_mean,
+                    "pe_median": data.industry_pe_median,
+                    "pe_p25": data.industry_pe_p25,
+                    "pe_p75": data.industry_pe_p75,
+                    "pb_mean": data.industry_pb_mean,
+                    "pb_median": data.industry_pb_median,
+                    "pb_p25": data.industry_pb_p25,
+                    "pb_p75": data.industry_pb_p75,
+                    "sample_n": data.industry_sample_n,
+                    "pe_n": data.industry_pe_n,
+                    "pb_n": data.industry_pb_n,
+                },
                 "macro": data.macro,
                 "history_len": len(data.valuation_history),
                 "forecast": {
@@ -1902,6 +2129,66 @@ def build_html_report(report: FinalReport, data: StockRawData) -> str:
     if report.agent_outputs.get("估值分析师"):
         va_extra = report.agent_outputs["估值分析师"].extra.get("valuation") or {}
 
+    # ---- 行业估值对比（改进#15：行业中位/均值/四分位区间，供理解 PE/PB 高低） ----
+    indu = va_extra.get("industry") or {}
+    indu_ov = ""       # 概览卡片里的小字
+    indu_html = ""     # 独立区块
+    if indu.get("pe_median", 0) > 0 or indu.get("pb_median", 0) > 0:
+        _ov_parts = []
+        if indu.get("pe_median", 0) > 0:
+            _ov_parts.append(f"PE 中位 {indu['pe_median']:.1f}x（{indu['pe_p25']:.1f}~{indu['pe_p75']:.1f}，n={indu.get('pe_n', 0)}）")
+        if indu.get("pb_median", 0) > 0:
+            _ov_parts.append(f"PB 中位 {indu['pb_median']:.2f}x（{indu['pb_p25']:.2f}~{indu['pb_p75']:.2f}，n={indu.get('pb_n', 0)}）")
+        indu_ov = ('<div style="font-size:11px;color:#7a8090;font-weight:normal;'
+                   f'margin-top:6px;line-height:1.5;">行业 {indu.get("name", "")}：' + "；".join(_ov_parts) + '</div>')
+
+        def _ind_zone(cur: float, p25: float, p75: float) -> str:
+            if cur <= 0:
+                return "不适用"
+            if cur < p25:
+                return "低于行业下四分位（相对低估）"
+            if cur > p75:
+                return "高于行业上四分位（相对高估）"
+            return "处于行业中枢区间"
+
+        indu_items = ""
+        if indu.get("pe_median", 0) > 0:
+            indu_items += (
+                f'<div class="trade-item"><div class="label">行业PE中位（{indu.get("name", "")}）</div>'
+                f'<div class="value">{indu["pe_median"]:.1f}x'
+                f'<br><span style="font-size:11px;color:#7a8090">四分位 {indu["pe_p25"]:.1f}~{indu["pe_p75"]:.1f}x · '
+                f'均值 {indu.get("pe_mean", 0):.1f}x · 样本 {indu.get("pe_n", 0)}/{indu.get("sample_n", 0)} 只</span></div></div>'
+            )
+            indu_items += (
+                f'<div class="trade-item"><div class="label">个股PE（对比行业）</div>'
+                f'<div class="value">{data.pe_ttm:.1f}x'
+                f'<br><span style="font-size:11px;color:#7a8090">'
+                f'{_ind_zone(data.pe_ttm, indu["pe_p25"], indu["pe_p75"])}</span></div></div>'
+            )
+        if indu.get("pb_median", 0) > 0:
+            indu_items += (
+                f'<div class="trade-item"><div class="label">行业PB中位（{indu.get("name", "")}）</div>'
+                f'<div class="value">{indu["pb_median"]:.2f}x'
+                f'<br><span style="font-size:11px;color:#7a8090">四分位 {indu["pb_p25"]:.2f}~{indu["pb_p75"]:.2f}x · '
+                f'均值 {indu.get("pb_mean", 0):.2f}x · 样本 {indu.get("pb_n", 0)}/{indu.get("sample_n", 0)} 只</span></div></div>'
+            )
+            indu_items += (
+                f'<div class="trade-item"><div class="label">个股PB（对比行业）</div>'
+                f'<div class="value">{data.pb:.2f}x'
+                f'<br><span style="font-size:11px;color:#7a8090">'
+                f'{_ind_zone(data.pb, indu["pb_p25"], indu["pb_p75"])}</span></div></div>'
+            )
+        indu_html = (
+            '<div class="section">'
+            f'<div class="section-title">🏷️ 行业估值对比（{indu.get("name", "")}）</div>'
+            f'<div class="trade-grid">{indu_items}</div>'
+            '<div style="font-size:11px;color:#7a8090;margin-top:8px;">'
+            '统计口径：同行业 A 股成分股的动态PE / 市净率，剔除 B 股与负值/缺失样本；'
+            '中位数比均值更抗极端值，四分位区间可理解为「行业中段水平」。'
+            '行业划分来自东方财富行业板块，仅用于理解估值相对高低，不构成投资建议。</div>'
+            '</div>'
+        )
+
     # ---- 机构一致预期子块（改进#14） ----
     fc_extra = va_extra.get("forecast") or {}
     fc_eps = fc_extra.get("eps") or {}
@@ -2007,7 +2294,7 @@ def build_html_report(report: FinalReport, data: StockRawData) -> str:
             '数据源：东方财富数据中心公开接口。非交易时段或接口异常时相关项显示"数据暂缺"。</div>'
             '</div>'
         )
-    val_html = val_html + fc_html
+    val_html = val_html + indu_html + fc_html
 
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -2104,7 +2391,7 @@ def build_html_report(report: FinalReport, data: StockRawData) -> str:
     <div class="overview-grid">
       <div class="overview-item"><div class="label">最新价 / 涨跌幅</div><div class="value">{report.price:.2f} / {report.change_pct:+.2f}%</div></div>
       <div class="overview-item"><div class="label">总市值</div><div class="value">{report.total_mv:.1f} 亿</div></div>
-      <div class="overview-item"><div class="label">PE-TTM / PB</div><div class="value">{report.pe_ttm:.1f} / {report.pb:.2f}</div></div>
+      <div class="overview-item"><div class="label">PE-TTM / PB</div><div class="value">{report.pe_ttm:.1f} / {report.pb:.2f}{indu_ov}</div></div>
       <div class="overview-item"><div class="label">换手率</div><div class="value">{data.turnover:.2f}%</div></div>
     </div>
   </div>

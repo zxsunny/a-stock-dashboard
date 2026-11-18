@@ -143,7 +143,8 @@
     {"id": "#11", "title": "排查报告营收/净利增速恒为 +0.0% 的数据口径问题", "priority": "low", "status": "fixed", "fixedAt": "2026-11-18", "issue": "P12"},
     {"id": "#12", "title": "估值合理性分析：近5年历史分位 + PS/PEG/市现率 + 宏观环境（CPI/PPI/PMI/GDP）", "priority": "medium", "status": "fixed", "fixedAt": "2026-11-18", "issue": null},
     {"id": "#13", "title": "桌面快捷方式：股票看板.app（osacompile 编译 + Safari 打开 + 自动起服务）", "priority": "low", "status": "fixed", "fixedAt": "2026-11-18", "issue": null},
-    {"id": "#14", "title": "接入小时助手 skill 方案B：估值长历史(stock_value_em 2018起) + 机构一致预期(EPS/目标价/评级) + 官方财报同比 + M2", "priority": "medium", "status": "fixed", "fixedAt": "2026-11-18", "issue": null}
+    {"id": "#14", "title": "接入小时助手 skill 方案B：估值长历史(stock_value_em 2018起) + 机构一致预期(EPS/目标价/评级) + 官方财报同比 + M2", "priority": "medium", "status": "fixed", "fixedAt": "2026-11-18", "issue": null},
+    {"id": "#15", "title": "PE/PB 行业对比备注：东财行业板块成分股均值/中位/四分位区间（看板指标卡 + 分析报告 + /api/industry_valuation）", "priority": "medium", "status": "fixed", "fixedAt": "2026-11-18", "issue": null}
   ],
   "conventions": {
     "runEntry": "start-server.bat 或 python server.py 8888（默认端口已改为8888，避开本机知识学习超级助手占用的8765；如需自定义可传参，如 python server.py 8799）",

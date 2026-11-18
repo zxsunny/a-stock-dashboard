@@ -73,6 +73,9 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/valuation_history":
             self._handle_valuation_history(parsed)
             return
+        if parsed.path == "/api/industry_valuation":
+            self._handle_industry_valuation(parsed)
+            return
         if parsed.path == "/api/health":
             self._send_json(200, {"ok": True})
             return
@@ -110,6 +113,49 @@ class Handler(SimpleHTTPRequestHandler):
             "pb_5y_range": [raw.pb_5y_min, raw.pb_5y_max],
             "high_5y": raw.high_5y,
             "low_5y": raw.low_5y,
+        })
+
+    def _handle_industry_valuation(self, parsed):
+        """返回个股所属行业的 PE/PB 均值、中位与四分位区间（改进#15）。
+
+        数据口径：东财行业板块成分股的动态PE(f9)/市净率(f23)，剔除 B 股与负值/缺失。
+        """
+        qs = urllib.parse.parse_qs(parsed.query)
+        code = (qs.get("code") or [""])[0].strip()
+        if not code or not code.isdigit() or len(code) != 6:
+            self._send_json(400, {"ok": False, "error": "请提供 6 位股票代码，例如 ?code=600519"})
+            return
+        try:
+            raw = msa.StockRawData(code=code)
+            msa.fetch_industry(raw)
+            msa.fetch_industry_valuation(raw)
+        except Exception as e:  # noqa: BLE001
+            self._send_json(502, {"ok": False, "error": f"行业估值获取失败：{e}"})
+            return
+        if not raw.industry or (raw.industry_pe_median <= 0 and raw.industry_pb_median <= 0):
+            self._send_json(404, {"ok": False, "error": "行业估值数据暂不可用（行业未匹配或接口异常）"})
+            return
+        self._send_json(200, {
+            "ok": True,
+            "code": code,
+            "industry": raw.industry,
+            "sample_n": raw.industry_sample_n,
+            "pe": {
+                "mean": round(raw.industry_pe_mean, 2),
+                "median": round(raw.industry_pe_median, 2),
+                "p25": round(raw.industry_pe_p25, 2),
+                "p75": round(raw.industry_pe_p75, 2),
+                "n": raw.industry_pe_n,
+            },
+            "pb": {
+                "mean": round(raw.industry_pb_mean, 2),
+                "median": round(raw.industry_pb_median, 2),
+                "p25": round(raw.industry_pb_p25, 2),
+                "p75": round(raw.industry_pb_p75, 2),
+                "n": raw.industry_pb_n,
+            },
+            "note": "统计口径：同行业 A 股成分股动态PE/市净率，剔除B股与负值/缺失；"
+                    "中位与四分位比均值更抗极端值。仅供理解估值相对高低，不构成投资建议。",
         })
 
     def _handle_analyze(self, parsed):

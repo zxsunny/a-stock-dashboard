@@ -240,6 +240,19 @@
     return null;
   }
 
+  // 行业 PE/PB 对比（本机 /api/industry_valuation，改进#15；失败返回 null 静默降级）
+  async function fetchIndustryValuation(code) {
+    try {
+      const resp = await fetch('/api/industry_valuation?code=' + encodeURIComponent(code), { cache: 'no-store' });
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      return (data && data.ok) ? data : null;
+    } catch (e) {
+      console.warn('[数据获取] 行业估值获取失败:', code, e);
+      return null;
+    }
+  }
+
   // 东方财富搜索API（替代失效的新浪搜索）
   async function searchStockCode(keyword) {
     try {
@@ -616,10 +629,11 @@
       panel.innerHTML = '<div class="empty-state"><div class="skeleton" style="height:200px;width:100%;"></div><p style="margin-top:1rem;">正在加载实时数据...</p></div>';
 
       // 并行获取数据（每个请求单独catch，避免一个失败导致全部失败）
-      const [realtimeData, moneyFlow, news] = await Promise.all([
+      const [realtimeData, moneyFlow, news, industryVal] = await Promise.all([
         fetchStockRealtime(stockCode),
         fetchMoneyFlow(stockCode).catch(() => null),
-        fetchStockNews(stockCode).catch(() => [])
+        fetchStockNews(stockCode).catch(() => []),
+        fetchIndustryValuation(stockCode).catch(() => null)
       ]);
 
       if (!realtimeData) {
@@ -645,6 +659,21 @@
     const pb = realtimeData.pb || 0;
     const marketCapStr = realtimeData.marketCap ? (realtimeData.marketCap / 100000000).toFixed(0) + '亿' : '--';
 
+    // 行业估值对比备注（改进#15：来自 /api/industry_valuation；取不到则退回「实时估值」）
+    let peDesc = '实时估值';
+    let pbDesc = '实时估值';
+    if (industryVal && industryVal.ok) {
+      const indName = industryVal.industry || '同行业';
+      if (industryVal.pe && industryVal.pe.median > 0) {
+        peDesc = indName + ' 中位 ' + industryVal.pe.median.toFixed(1) +
+          '（' + industryVal.pe.p25.toFixed(1) + '~' + industryVal.pe.p75.toFixed(1) + '，n=' + industryVal.pe.n + '）';
+      }
+      if (industryVal.pb && industryVal.pb.median > 0) {
+        pbDesc = indName + ' 中位 ' + industryVal.pb.median.toFixed(2) +
+          '（' + industryVal.pb.p25.toFixed(2) + '~' + industryVal.pb.p75.toFixed(2) + '，n=' + industryVal.pb.n + '）';
+      }
+    }
+
     const now = new Date();
     const updateTime = now.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 
@@ -657,8 +686,8 @@
     '</div>';
 
     html += '<div class="metrics-grid">' +
-      '<div class="metric-card"><div class="metric-label">市盈率 PE</div><div class="metric-value">' + (pe > 0 ? formatNumber(pe) : '亏损') + '</div><div class="metric-desc">实时估值</div></div>' +
-      '<div class="metric-card"><div class="metric-label">市净率 PB</div><div class="metric-value">' + formatNumber(pb) + '</div><div class="metric-desc">实时估值</div></div>' +
+      '<div class="metric-card"><div class="metric-label">市盈率 PE</div><div class="metric-value">' + (pe > 0 ? formatNumber(pe) : '亏损') + '</div><div class="metric-desc" title="同行业成分股动态PE中位与四分位区间（剔除负值），仅供理解估值高低">' + peDesc + '</div></div>' +
+      '<div class="metric-card"><div class="metric-label">市净率 PB</div><div class="metric-value">' + formatNumber(pb) + '</div><div class="metric-desc" title="同行业成分股市净率中位与四分位区间，仅供理解估值高低">' + pbDesc + '</div></div>' +
       '<div class="metric-card"><div class="metric-label">总市值</div><div class="metric-value">' + marketCapStr + '</div><div class="metric-desc">流通市值</div></div>' +
       '<div class="metric-card"><div class="metric-label">换手率</div><div class="metric-value">' + (realtimeData.turnover ? formatNumber(realtimeData.turnover) + '%' : '--') + '</div><div class="metric-desc">今日成交</div></div>' +
       '<div class="metric-card"><div class="metric-label">最高</div><div class="metric-value">' + formatNumber(realtimeData.high) + '</div><div class="metric-desc">今日最高</div></div>' +
