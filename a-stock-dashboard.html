@@ -774,8 +774,6 @@
         <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
           <span>&#9733; 我的自选</span>
           <div style="display:flex;gap:0.3rem;">
-            <button onclick="saveToDataFile()" style="font-size:0.7rem;padding:0.2rem 0.5rem;background:var(--bg2);border:1px solid var(--rule);border-radius:4px;color:var(--ink);cursor:pointer;" title="保存为数据文件（永久保存，更新代码不丢失）">&#128190; 保存</button>
-            <button onclick="backupSeedFile()" style="font-size:0.7rem;padding:0.2rem 0.5rem;background:var(--bg2);border:1px solid var(--rule);border-radius:4px;color:var(--ink);cursor:pointer;" title="下载种子文件替换 data/watchlist-seed.js 永久保存自选股">&#128295; 种子</button>
             <button onclick="importWatchlistFile()" style="font-size:0.7rem;padding:0.2rem 0.5rem;background:var(--bg2);border:1px solid var(--rule);border-radius:4px;color:var(--ink);cursor:pointer;" title="从数据文件导入">&#128229; 导入</button>
           </div>
         </div>
@@ -786,7 +784,7 @@
           </div>
         </div>
         <div style="padding:0.5rem 1rem;border-top:1px solid var(--rule);font-size:0.7rem;color:var(--muted);line-height:1.4;">
-          &#128161; 点击"保存"下载数据文件，放到项目 data/ 目录，更新代码也不会丢失
+          &#128161; 自选股自动保存在浏览器 localStorage；可用"导入"从备份文件恢复
         </div>
       </div>
 

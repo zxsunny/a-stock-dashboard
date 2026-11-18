@@ -47,7 +47,6 @@
 
   // ==================== 数据存储 ====================
   const STORAGE_KEY = 'a_stock_watchlist';
-  const DATA_FILE = './data/watchlist.json';
   // 硬编码种子数据（最终回退，防止任何缓存导致数据丢失）
   const EMBEDDED_SEED = [
     { "code": "600519", "name": "贵州茅台" },
@@ -60,37 +59,40 @@
   ];
   let currentStock = null;
   let watchlist = [];
-  let dataFileAvailable = false;
 
-  // 加载自选股（三级回退：HTML内联种子 → JS硬编码种子 → localStorage）
+  // 加载自选股（改进#6：统一 localStorage 为唯一权威源，种子仅首次初始化）
   function loadWatchlist() {
     try {
-      let data = null;
-      // 1. 优先使用 HTML 内联种子（window.__STOCK_WATCHLIST_SEED__）
-      if (window.__STOCK_WATCHLIST_SEED__ && window.__STOCK_WATCHLIST_SEED__.length > 0) {
-        data = window.__STOCK_WATCHLIST_SEED__;
-      }
-      // 2. 回退到 JS 硬编码种子（EMBEDDED_SEED）
-      if (!data || !data.length) {
-        data = EMBEDDED_SEED;
-      }
-      // 3. 如果 localStorage 有更新的数据，合并进去（补充新增的自选股）
+      // 1. localStorage 有数据 → 直接返回（不再与种子合并，修复删自选后又被种子带回的问题）
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         try {
           const localData = JSON.parse(raw);
           if (Array.isArray(localData) && localData.length > 0) {
+            const result = [];
             for (const item of localData) {
-              if (item && item.code && !data.some(d => d.code === item.code)) {
-                data = data.concat([item]);
+              if (typeof item === 'string' && /^\d{6}$/.test(item)) {
+                const name = Object.keys(NAME_TO_CODE).find(k => NAME_TO_CODE[k] === item);
+                result.push({ code: item, name: (name || item).replace(/\s+/g, '') });
+              } else if (item && typeof item === 'object' && item.code && /^\d{6}$/.test(item.code)) {
+                const cleanName = (item.name || item.code).replace(/\s+/g, '');
+                result.push({ code: item.code, name: cleanName });
+                if (cleanName) NAME_TO_CODE[cleanName] = item.code;
               }
             }
+            if (result.length > 0) return result;
           }
         } catch(e) {}
       }
-      if (!data || !Array.isArray(data)) return [];
+      // 2. localStorage 为空（首次使用）→ 用种子初始化并写入 localStorage，此后以 localStorage 为准
+      let seed = null;
+      if (window.__STOCK_WATCHLIST_SEED__ && window.__STOCK_WATCHLIST_SEED__.length > 0) {
+        seed = window.__STOCK_WATCHLIST_SEED__;
+      } else {
+        seed = EMBEDDED_SEED;
+      }
       const result = [];
-      for (const item of data) {
+      for (const item of seed) {
         if (typeof item === 'string' && /^\d{6}$/.test(item)) {
           const name = Object.keys(NAME_TO_CODE).find(k => NAME_TO_CODE[k] === item);
           result.push({ code: item, name: (name || item).replace(/\s+/g, '') });
@@ -912,69 +914,6 @@
     }
   };
 
-  // 保存为数据文件（文件名固定为watchlist.json，方便放到data目录下）
-  window.saveToDataFile = function() {
-    if (!watchlist.length) {
-      showToast('自选股列表为空，无需保存', 'warning');
-      return;
-    }
-    const data = JSON.stringify(watchlist, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'watchlist.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast('✓ 数据文件已下载，请放到项目 data/ 目录下永久保存', 'success', 5000);
-  };
-
-  // 备份为种子文件（下载 watchlist-seed.js，替换项目 data/watchlist-seed.js 即可永久保存）
-  window.backupSeedFile = function() {
-    if (!watchlist.length) {
-      showToast('自选股列表为空，无需备份', 'warning');
-      return;
-    }
-    var content = '// 自选股持久化数据 - 通过 <script> 标签加载，兼容 file:// 协议\n';
-    content += '// 修改此文件即可永久更新自选股列表\n';
-    content += '// 备份时间：' + new Date().toLocaleString('zh-CN') + '\n';
-    content += 'window.__STOCK_WATCHLIST_SEED__ = ';
-    content += JSON.stringify(watchlist, null, 2).replace(/\n/g, '\n  ');
-    content += ';\n';
-    var blob = new Blob([content], { type: 'application/javascript' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = 'watchlist-seed.js';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast('✓ 种子文件已下载，请替换项目 data/watchlist-seed.js 以永久保存', 'success', 5000);
-  };
-
-  // 导出为文件（下载JSON文件到本地）
-  window.exportWatchlistFile = function() {
-    if (!watchlist.length) {
-      showToast('自选股列表为空，无需导出', 'warning');
-      return;
-    }
-    const data = JSON.stringify(watchlist, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const date = new Date().toISOString().slice(0, 10);
-    a.href = url;
-    a.download = '自选股备份_' + date + '.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast('✓ 自选股备份文件已下载');
-  };
-
   // 从文件导入
   window.importWatchlistFile = function() {
     const input = document.createElement('input');
@@ -1090,49 +1029,9 @@
     }, 10000);
   }
 
-  // 从本地数据文件加载自选股
-  async function loadWatchlistFromFile() {
-    try {
-      const response = await fetch(DATA_FILE, { cache: 'no-store' });
-      if (!response.ok) return null;
-      const data = await response.json();
-      if (!Array.isArray(data)) return null;
-      const result = [];
-      for (const item of data) {
-        if (item && typeof item === 'object' && item.code && /^\d{6}$/.test(item.code)) {
-          const cleanName = (item.name || item.code).replace(/\s+/g, '');
-          result.push({ code: item.code, name: cleanName });
-          if (cleanName) NAME_TO_CODE[cleanName] = item.code;
-        } else if (typeof item === 'string' && /^\d{6}$/.test(item)) {
-          const name = Object.keys(NAME_TO_CODE).find(k => NAME_TO_CODE[k] === item);
-          result.push({ code: item, name: (name || item).replace(/\s+/g, '') });
-        }
-      }
-      dataFileAvailable = true;
-      return result;
-    } catch (e) {
-      console.warn('本地数据文件加载失败:', e);
-      return null;
-    }
-  }
-
-  // 初始化自选股数据（优先localStorage，其次本地文件）
-  async function initWatchlistData() {
-    // 先从localStorage加载
-    const localData = loadWatchlist();
-    if (localData && localData.length > 0) {
-      watchlist = localData;
-      return;
-    }
-    // localStorage为空，尝试从本地文件加载
-    const fileData = await loadWatchlistFromFile();
-    if (fileData && fileData.length > 0) {
-      watchlist = fileData;
-      saveWatchlist(fileData);
-      showToast('已从本地数据文件加载 ' + fileData.length + ' 只自选股', 'success', 3000);
-    } else {
-      watchlist = [];
-    }
+  // 初始化自选股数据（改进#6：统一 localStorage 单源，loadWatchlist 内完成初始化/迁移）
+  function initWatchlistData() {
+    watchlist = loadWatchlist();
   }
 
   // ==================== 国内及国际经济大新闻 ====================
@@ -1178,11 +1077,11 @@
   ];
 
   // 非财经排除关键词（含这些关键词的新闻直接排除）
+  // 改进#5（P4）：删除地缘/军事/大宗误杀词（乌克兰/俄罗斯/以色列/战争/导弹/霍尔木兹等），
+  // 这类词可能同时出现在油价、黄金、大宗、军工等财经新闻中；仅保留纯非财经词。
   const EXCLUDE_KEYWORDS = [
     '火灾','地震','洪水','台风','暴雨','车祸','空难','沉船','爆炸','坍塌',
     '杀人','遇难','伤亡','失踪',
-    '战争','开战','停火','军事演习','导弹','军舰','战机',
-    '乌克兰','俄罗斯','普京','泽连斯基','以色列','巴勒斯坦','哈马斯',
     '间谍','窃密','涉密',
     '疫情','传染病','病毒',
     '明星','娱乐','八卦','电影','综艺','选秀',
@@ -1190,10 +1089,7 @@
     '高考','中考','考研',
     '旅游','美食','时尚','养生',
     '恐怖袭击','撞人','枪击','暗杀','自杀',
-    '内政部长','外交部长','国防部长','参谋长',
-    '霍尔木兹','航运管理','阿曼会谈',
-    '取消航班','航班取消','延误',
-    '无人机完成首飞'
+    '取消航班','航班取消','延误'
   ];
 
   // 政策类新闻关键词

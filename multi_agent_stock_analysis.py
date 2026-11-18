@@ -154,6 +154,9 @@ class StockRawData:
     roe: float = 0.0              # ROE %
     debt_ratio: float = 0.0       # 资产负债率 %
     report_dates: List[str] = field(default_factory=list)
+    # 行业 / 概念（东财 push2 f127 / f128，供产业策略师动态取数）
+    industry: str = ""
+    concept: str = ""
     # 技术指标（从 K 线计算）
     ma5: float = 0.0
     ma10: float = 0.0
@@ -397,11 +400,12 @@ def fetch_klines_and_ta(data: StockRawData, count: int = 180):
         return
 
     def ma(n):
+        # 边界保护（改进#8）：K线不足 n 根时返回 0.0，调用方须过滤，避免误判
         return sum(closes[-n:]) / n if len(closes) >= n else 0.0
     data.ma5 = ma(5)
     data.ma10 = ma(10)
     data.ma20 = ma(20)
-    data.ma60 = ma(60)
+    data.ma60 = ma(60)  # K线<60根时为 0.0（无效），使用处已加过滤（见 技术信号官 支撑位）
 
     # RSI14
     if len(closes) >= 15:
@@ -509,14 +513,13 @@ def fetch_financial_summary(data: StockRawData):
         try:
             if data.total_mv > 0 and data.pe_ttm > 0:
                 annual_np = data.total_mv / data.pe_ttm  # 亿
-                # 拆成 4 期（最近两期各占 30%，前两期各占 20%）
-                data.net_profit = [annual_np * w for w in (0.20, 0.20, 0.30, 0.30)]
-                data.revenue = [annual_np * w * (1 / max(0.01, data.net_margin / 100 if data.net_margin > 0 else 0.10))
-                                for w in (0.20, 0.20, 0.30, 0.30)]
-                today = datetime.date.today()
-                for i in range(4):
-                    d = today - datetime.timedelta(days=90 * (3 - i))
-                    data.report_dates.append(d.isoformat())
+                # 改进#11（P12）：此前拆成 4 期权重（0.20/0.20/0.30/0.30），导致
+                # 「营收/净利同比」恒显示 +0.0%，且属于编造历史数据；
+                # 现改为仅填当期年化估算（1 期），EarningsAgent 因 len<2 不再输出
+                # 误导性的同比增速结论。营收无可靠估算依据时不填（不编造）。
+                data.net_profit = [annual_np]
+                data.revenue = []
+                data.report_dates = [datetime.date.today().isoformat()]
                 # 若 ROE 为 0，通过 ROE ≈ 净利/净资产 估算一个近似值
                 if data.roe <= 0 and data.pb > 0:
                     # PB = 市值/净资产，净资产 = 市值/PB；ROE ≈ 净利*100/净资产
@@ -524,11 +527,35 @@ def fetch_financial_summary(data: StockRawData):
                     if equity > 0:
                         data.roe = annual_np * 100 / equity
                 print(f"  [数据层] 财务(降级估算): PE={data.pe_ttm:.2f} 市值={data.total_mv:.0f}亿  "
-                      f"年化净利≈{annual_np:.2f}亿  ROE≈{data.roe:.1f}%")
+                      f"年化净利≈{annual_np:.2f}亿（仅当期估算，无历史期）  ROE≈{data.roe:.1f}%")
             else:
                 print(f"  [数据层] 财务(降级估算): 无法计算（PE或总市值缺失）。当前毛利率={data.gross_margin:.1f}% ROE={data.roe:.1f}%")
         except Exception as e2:
             print(f"  [数据层] 财务降级估算异常: {e2}")
+
+
+def fetch_industry(data: StockRawData):
+    """从东财 push2 获取行业(f127) / 概念(f128)，供产业策略师动态取数（改进#2）。
+
+    ⚠ 该接口返回 UTF-8 编码的 JSONP；不能走 _get 的 apparent_encoding（会误判
+    为 ptcp154 等导致中文乱码），必须直接按 UTF-8 解码。
+    """
+    try:
+        secid = code_to_secid(data.code)
+        url = (f"https://push2.eastmoney.com/api/qt/stock/get"
+               f"?secid={secid}&fields=f14,f127,f128&cb=cb")
+        raw = _session().get(url, headers=HEADERS_EM, timeout=8).content
+        txt = raw.decode("utf-8", errors="ignore")
+        start = txt.find("(")
+        end = txt.rfind(")")
+        obj = json.loads(txt[start + 1:end]) if start != -1 and end != -1 else None
+        d = (obj or {}).get("data") or {}
+        data.industry = (d.get("f127") or "").strip()
+        data.concept = (d.get("f128") or "").strip()
+        if data.industry:
+            print(f"  [数据层] 行业(东财): {data.industry}  概念: {data.concept}")
+    except Exception as e:
+        print(f"  [数据层] 行业接口异常: {e}")
 
 
 def load_all_data(code: str) -> StockRawData:
@@ -536,6 +563,7 @@ def load_all_data(code: str) -> StockRawData:
     fetch_realtime(raw)
     fetch_klines_and_ta(raw)
     fetch_financial_summary(raw)
+    fetch_industry(raw)
     return raw
 
 
@@ -802,16 +830,21 @@ class IndustryAgent:
 
     def run(self, data: StockRawData) -> AgentOutput:
         print_role_header(self.NAME, self.EMOJI)
-        prof = self.PROFILE.get(data.code, {
-            "industry": "一般行业",
-            "moat": 5,
-            "cycle_pos": 5,
-            "theme": ["行业主题待补充"]
-        })
-        industry = prof["industry"]
-        moat = prof["moat"]
-        cycle = prof["cycle_pos"]
-        themes = prof["theme"]
+        prof = self.PROFILE.get(data.code)
+        # 改进#2（P2）：行业/概念优先取东财实时数据（data.industry / data.concept），
+        # 不再对绝大多数股票退回"一般行业"假分析；PROFILE 仅对重点股票提供
+        # 护城河/景气画像，其余股票护城河/景气取中性默认并在文案中如实标注。
+        industry = data.industry or (prof and prof["industry"]) or "一般行业"
+        if prof:
+            moat = prof["moat"]
+            cycle = prof["cycle_pos"]
+            themes = list(prof["theme"])
+            profile_note = ""
+        else:
+            moat = 5
+            cycle = 5
+            themes = [data.concept] if data.concept else ["行业主题待补充"]
+            profile_note = "（该股无人工画像，护城河/景气为中性默认，行业取自实时行情）"
 
         conclusions = [
             f"所属赛道：{industry}",
@@ -819,6 +852,8 @@ class IndustryAgent:
             f"景气周期位置：{'🌟'*cycle}{'·'*(10-cycle)} ({cycle}/10)",
             f"主线催化：{', '.join(themes)}",
         ]
+        if profile_note:
+            conclusions.append(profile_note)
 
         bulls = []
         bears = []
@@ -921,8 +956,9 @@ class TechnicalAgent:
                 bulls.append(f"换手率 {data.turnover:.1f}% 交投活跃")
             conclusions.append(f"换手率 {data.turnover:.2f}%")
 
-        # 支撑/压力位
-        support = round(min(data.ma20, data.ma60, data.low_60d), 2)
+        # 支撑/压力位（改进#8：ma60 在K线不足60根时为 0，须过滤，避免支撑位被误算为 0）
+        valid_supports = [x for x in (data.ma20, data.ma60, data.low_60d) if x > 0]
+        support = round(min(valid_supports), 2) if valid_supports else round(data.low_60d, 2)
         resistance = round(max(data.ma20, data.high_60d), 2)
         conclusions.append(f"短线支撑 ~{support}   压力位 ~{resistance}")
 
