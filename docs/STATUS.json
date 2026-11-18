@@ -141,7 +141,8 @@
     {"id": "#9", "title": "五维评分语义统一（风险→安全，所有维度分越高越好）", "priority": "medium", "status": "fixed", "fixedAt": "2026-08-24", "issue": "P10"},
     {"id": "#10", "title": "requirements.txt 声明 Python ≥ 3.10 及运行环境说明", "priority": "high", "status": "fixed", "fixedAt": "2026-11-18", "issue": "P11"},
     {"id": "#11", "title": "排查报告营收/净利增速恒为 +0.0% 的数据口径问题", "priority": "low", "status": "fixed", "fixedAt": "2026-11-18", "issue": "P12"},
-    {"id": "#12", "title": "估值合理性分析：近5年历史分位 + PS/PEG/市现率 + 宏观环境（CPI/PPI/PMI/GDP）", "priority": "medium", "status": "fixed", "fixedAt": "2026-11-18", "issue": null}
+    {"id": "#12", "title": "估值合理性分析：近5年历史分位 + PS/PEG/市现率 + 宏观环境（CPI/PPI/PMI/GDP）", "priority": "medium", "status": "fixed", "fixedAt": "2026-11-18", "issue": null},
+    {"id": "#13", "title": "桌面快捷方式：股票看板.app（osacompile 编译 + Safari 打开 + 自动起服务）", "priority": "low", "status": "fixed", "fixedAt": "2026-11-18", "issue": null}
   ],
   "conventions": {
     "runEntry": "start-server.bat 或 python server.py 8888（默认端口已改为8888，避开本机知识学习超级助手占用的8765；如需自定义可传参，如 python server.py 8799）",
